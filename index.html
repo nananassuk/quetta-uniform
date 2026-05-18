@@ -1818,49 +1818,6 @@ function renderStock() {
       </table></div>`;
 
 
-    // 실재고 체크 이력
-    const weeks = [...new Set(G.stockChecks.map(c => c.weekId).filter(Boolean))].sort().reverse();
-    const selWeek = document.getElementById('histWeekSel')?.value || weeks[0] || '';
-    const weekChecks = G.stockChecks.filter(c => c.weekId === selWeek);
-    const checkMap = {};
-    weekChecks.forEach(c => { checkMap[`${c.item}_${c.size}`] = c; });
-
-    let rows = '';
-    Object.entries(G.cfg.items).forEach(([item, cfg]) => {
-      cfg.sizes.forEach((sz, si) => {
-        const sys = stock[item]?.[sz] || 0;
-        const def = defect[item]?.[sz] || 0;
-        const chk = checkMap[`${item}_${sz}`];
-        const actual = chk?.actual;
-        const diff = actual !== undefined ? actual - sys : null;
-        const diffCell = diff === null ? '<span style="color:#cbd5e1">—</span>' :
-          diff === 0 ? '<span style="color:var(--ok)">✓</span>' :
-          diff > 0 ? `<span class="pos">+${diff}</span>` : `<span class="neg">${diff}</span>`;
-        rows += `<tr class="${si===0?'gc':''}">
-          ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left">${item}</td>`:''}
-          <td>${sz}</td>
-          <td style="color:var(--accent);font-weight:700">${sys}</td>
-          <td>${actual !== undefined ? actual : '—'}</td>
-          <td>${diffCell}</td>
-          <td style="color:var(--err);font-weight:600">${def > 0 ? def : '—'}</td>
-          <td style="font-size:11px;color:var(--muted);max-width:160px">${chk?.note || ''}</td>
-        </tr>`;
-      });
-    });
-    bodyHtml = `
-      <div class="sec-hd">
-        <div style="display:flex;align-items:center;gap:8px">
-          <select id="histWeekSel" onchange="renderStock()" style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">
-            ${weeks.length === 0 ? '<option value="">저장된 이력 없음</option>' : weeks.map(w=>`<option value="${w}" ${w===selWeek?'selected':''}>${w}</option>`).join('')}
-          </select>
-          <span style="font-size:12px;color:var(--muted)">${weekChecks.length > 0 ? weekChecks[0].createdAt?.toDate?.()?.toLocaleDateString?.('ko-KR')||'' : ''}</span>
-        </div>
-        <button class="btn bo" onclick="exportStockReport()">📥 엑셀 다운로드</button>
-      </div>
-      <div class="tw"><table class="tb">
-        <thead><tr><th>품목</th><th>사이즈</th><th>시스템재고</th><th>실재고</th><th>차이</th><th>불량수량</th><th>비고</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>`;
 
   } else {
     // 최신 비교현황
