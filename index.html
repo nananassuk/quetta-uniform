@@ -1634,93 +1634,55 @@ function renderStock() {
 
 
   } else if (stockTabSel === 'check') {
-  } else if (stockTabSel === 'check') {
     const today = new Date().toISOString().split('T')[0];
     const nowH  = new Date().getHours();
     const checkDate = G._checkDate || today;
     const checkHour = G._checkHour !== undefined ? G._checkHour : nowH;
-
-    // 지정 일시 기준 시스템 재고 계산
     const sysAtTime = calcStockAtTime(checkDate, checkHour);
-
+    const S = (w) => 'style="width:'+w+'px;padding:4px;border:1.5px solid var(--bdr);border-radius:6px;text-align:center;font-family:var(--font);font-size:11px;outline:none"';
     let rows = '';
     getItemsBySeasonOrdered('동복').concat(getItemsBySeasonOrdered('하복')).forEach((item) => {
-      const cfg = G.cfg.items[item];
-      if (!cfg) return;
+      const cfg = G.cfg.items[item]; if (!cfg) return;
       cfg.sizes.forEach((sz, si) => {
-        const sysStk  = (sysAtTime.stock[item]?.[sz]  || 0);
-        const sysDef  = (sysAtTime.defect[item]?.[sz] || 0);
-        const sysTotal = sysStk + sysDef; // 불량 포함
-        const inp = (t) => `<input type="number" min="0" value="0" id="chk_${t}_${item}_${sz}"
-          style="width:62px;padding:4px;border:1.5px solid var(--bdr);border-radius:6px;text-align:center;
-          font-family:var(--font);font-size:11px;outline:none"
-          oninput="calcCheckSum(this)">`;
-        rows += `<tr class="${si===0?'gc':''}">
-          ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left">${item}</td>`:''}
-          <td>${sz}</td>
-          ${inp('창고')}</td><td>${inp('교판실')}</td><td>${inp('샘플')}</td><td>${inp('불량')}</td>
-          <td style="font-weight:700;color:var(--ok)" id="chksum_${item}_${sz}">0</td>
-          <td style="font-weight:700;color:var(--accent)" id="chksys_${item}_${sz}" data-sys="${sysTotal}">${sysTotal}</td>
-          <td style="font-weight:700" id="chkdiff_${item}_${sz}">—</td>
-          <td><input type="text" id="chknote_${item}_${sz}" placeholder="사유..."
-            style="width:130px;padding:4px 7px;border:1.5px solid var(--bdr);border-radius:6px;
-            font-family:var(--font);font-size:11px;outline:none"></td>
-        </tr>`;
+        const sysTotal = (sysAtTime.stock[item]?.[sz]||0) + (sysAtTime.defect[item]?.[sz]||0);
+        const inpHtml = (t) => '<input type="number" min="0" value="0" id="chk_'+t+'_'+item+'_'+sz+'" '+S(62)+' oninput="calcCheckSum(this)">';
+        rows += '<tr class="'+(si===0?'gc':'')+'">'+
+          (si===0?'<td class="thd" rowspan="'+cfg.sizes.length+'" style="text-align:left">'+item+'</td>':'')+
+          '<td>'+sz+'</td>'+
+          '<td>'+inpHtml('창고')+'</td><td>'+inpHtml('교판실')+'</td>'+
+          '<td>'+inpHtml('샘플')+'</td><td>'+inpHtml('불량')+'</td>'+
+          '<td style="font-weight:700;color:var(--ok)" id="chksum_'+item+'_'+sz+'">0</td>'+
+          '<td style="font-weight:700;color:var(--accent)" id="chksys_'+item+'_'+sz+'" data-sys="'+sysTotal+'">'+sysTotal+'</td>'+
+          '<td style="font-weight:700" id="chkdiff_'+item+'_'+sz+'">—</td>'+
+          '<td><input type="text" id="chknote_'+item+'_'+sz+'" placeholder="사유..." '+S(130)+'></td>'+
+          '</tr>';
       });
     });
-
-    const hours = Array.from({length:24},(_,i)=>
-      `<option value="${i}" ${i===checkHour?'selected':''}>${String(i).padStart(2,'0')}시</option>`).join('');
-
-    bodyHtml = `
-      <div class="ibox">
-        📋 재고 조사 일시를 입력하면, <strong>해당 시각 기준 시스템재고</strong>와 비교합니다.<br>
-        실재고 = 창고 + 교판실 + 샘플 + 불량 | 시스템재고는 불량 포함
-      </div>
-      <div class="fr" style="align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-        <div class="fg">
-          <label>조사 일자 *</label>
-          <input type="date" id="checkDateInp" value="${checkDate}"
-            onchange="G._checkDate=this.value;selStockTab('check')"
-            style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
-        </div>
-        <div class="fg">
-          <label>조사 시간 *</label>
-          <select id="checkHourInp" onchange="G._checkHour=parseInt(this.value);selStockTab('check')"
-            style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
-            ${hours}
-          </select>
-        </div>
-        <div style="font-size:12px;color:var(--muted);padding-bottom:9px">
-          기준: <strong>${checkDate} ${String(checkHour).padStart(2,'0')}:59 이전</strong> 입출고 반영
-        </div>
-        <div style="margin-top:auto;display:flex;gap:8px">
-          <button class="btn bo btn-sm" onclick="downloadCheckForm()">📥 양식 다운로드</button>
-          <button class="btn bp" onclick="saveStockCheck()">💾 실재고 저장</button>
-        </div>
-      </div>
-      <div class="tw" style="overflow-x:auto">
-        <table class="tb">
-          <thead>
-            <tr>
-              <th rowspan="2">품목</th><th rowspan="2">사이즈</th>
-              <th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고 입력</th>
-              <th rowspan="2" style="background:#f0fdf4;color:var(--ok)">실재고합계</th>
-              <th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고<br><span style="font-size:10px;font-weight:400">(불량포함)</span></th>
-              <th rowspan="2">차이</th>
-              <th rowspan="2">차이 사유</th>
-            </tr>
-            <tr>
-              <th style="background:#f0f9ff;color:#0369a1">창고</th>
-              <th style="background:#f0f9ff;color:#0369a1">교판실</th>
-              <th style="background:#f0f9ff;color:#0369a1">샘플</th>
-              <th style="background:#f0f9ff;color:#0369a1">불량</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
-
+    const hours = Array.from({length:24},(_,i)=>'<option value="'+i+'" '+(i===checkHour?'selected':'')+'>'+(i<10?'0'+i:i)+'시</option>').join('');
+    bodyHtml = '<div class="ibox">📋 재고 조사 일시를 입력하면 <strong>해당 시각 기준 시스템재고</strong>와 비교합니다.<br>실재고 = 창고 + 교판실 + 샘플 + 불량 | 시스템재고는 불량 포함</div>'+
+      '<div class="fr" style="align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+
+        '<div class="fg"><label>조사 일자 *</label>'+
+          '<input type="date" id="checkDateInp" value="'+checkDate+'" onchange="G._checkDate=this.value;selStockTab('check')" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none"></div>'+
+        '<div class="fg"><label>조사 시간 *</label>'+
+          '<select id="checkHourInp" onchange="G._checkHour=parseInt(this.value);selStockTab('check')" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">'+hours+'</select></div>'+
+        '<div style="font-size:12px;color:var(--muted);padding-bottom:9px">기준: <strong>'+checkDate+' '+(checkHour<10?'0'+checkHour:checkHour)+':59 이전</strong></div>'+
+        '<div style="margin-top:auto;display:flex;gap:8px">'+
+          '<button class="btn bo btn-sm" onclick="downloadCheckForm()">📥 양식 다운로드</button>'+
+          '<button class="btn bp" onclick="saveStockCheck()">💾 실재고 저장</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="tw" style="overflow-x:auto"><table class="tb">'+
+        '<thead><tr>'+
+          '<th rowspan="2">품목</th><th rowspan="2">사이즈</th>'+
+          '<th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고 입력</th>'+
+          '<th rowspan="2" style="background:#f0fdf4;color:var(--ok)">실재고합계</th>'+
+          '<th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고(불량포함)</th>'+
+          '<th rowspan="2">차이</th><th rowspan="2">차이 사유</th>'+
+        '</tr><tr>'+
+          '<th style="background:#f0f9ff">창고</th><th style="background:#f0f9ff">교판실</th>'+
+          '<th style="background:#f0f9ff">샘플</th><th style="background:#f0f9ff">불량</th>'+
+        '</tr></thead>'+
+        '<tbody>'+rows+'</tbody></table></div>';
 
   } else if (stockTabSel === 'history') {
     // 실재고 체크 이력 (일시별)
@@ -2280,27 +2242,105 @@ function renderStudents() {
       </div>`;
 
   } else if (studentTabSel === 'history') {
-    // 전체 출고 이력 + 엑셀 다운로드
-    const allDisp = G.dispatches.sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0));
+    // 전체 출고 이력 + 기간 필터 + 통계
+    const today = new Date().toISOString().split('T')[0];
+    const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+    const fFrom   = document.getElementById('hf_from')?.value   || monthAgo;
+    const fTo     = document.getElementById('hf_to')?.value     || today;
+    const fCourse = document.getElementById('hf_course')?.value || '전체';
+    const fItem   = document.getElementById('hf_item')?.value   || '전체';
+    const fType   = document.getElementById('hf_type')?.value   || '전체';
+
+    // 필터 적용
+    let filtered = G.dispatches.filter(d => {
+      const dt = d.createdAt?.toDate?.();
+      if (!dt) return false;
+      const ds = dt.toISOString().split('T')[0];
+      if (ds < fFrom || ds > fTo) return false;
+      if (fCourse !== '전체' && d.course !== fCourse) return false;
+      if (fItem   !== '전체' && d.item   !== fItem)   return false;
+      if (fType   !== '전체' && d.type   !== fType)   return false;
+      return true;
+    }).sort((a,b) => (b.createdAt?.toDate?.()?.getTime()||0) - (a.createdAt?.toDate?.()?.getTime()||0));
+
+    // 통계: 품목+사이즈별 집계
+    const statMap = {};
+    filtered.filter(d => d.type === '출고' || d.type === '교환출고').forEach(d => {
+      const k = `${d.item}||${d.size}`;
+      if (!statMap[k]) statMap[k] = { item:d.item, size:d.size, qty:0 };
+      statMap[k].qty += d.qty || 1;
+    });
+    const statRows = Object.values(statMap).sort((a,b) => b.qty - a.qty);
+
+    const courseOpts = ['전체', ...Object.keys(G.cfg.courses)].map(c =>
+      `<option value="${c}" ${fCourse===c?'selected':''}>${c}</option>`).join('');
+    const itemOpts = ['전체', ...Object.keys(G.cfg.items)].map(i =>
+      `<option value="${i}" ${fItem===i?'selected':''}>${i}</option>`).join('');
+    const typeOpts = ['전체','출고','반품','교환출고','미수령','불량입고','반품입고'].map(t =>
+      `<option value="${t}" ${fType===t?'selected':''}>${t}</option>`).join('');
+
     bodyHtml = `
+      <!-- 필터 -->
+      <div style="background:#f8fafc;border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:14px">
+        <div class="fr" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+          <div class="fg"><label>시작일</label>
+            <input type="date" id="hf_from" value="${fFrom}" onchange="renderStudents()"
+              style="padding:7px 10px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none"></div>
+          <div class="fg"><label>종료일</label>
+            <input type="date" id="hf_to" value="${fTo}" onchange="renderStudents()"
+              style="padding:7px 10px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none"></div>
+          <div class="fg"><label>과정</label>
+            <select id="hf_course" onchange="renderStudents()" style="padding:7px 10px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">${courseOpts}</select></div>
+          <div class="fg"><label>품목</label>
+            <select id="hf_item" onchange="renderStudents()" style="padding:7px 10px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">${itemOpts}</select></div>
+          <div class="fg"><label>유형</label>
+            <select id="hf_type" onchange="renderStudents()" style="padding:7px 10px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">${typeOpts}</select></div>
+          <button class="btn bo btn-sm" onclick="
+            document.getElementById('hf_from').value='${monthAgo}';
+            document.getElementById('hf_to').value='${today}';
+            document.getElementById('hf_course').value='전체';
+            document.getElementById('hf_item').value='전체';
+            document.getElementById('hf_type').value='전체';
+            renderStudents()">초기화</button>
+        </div>
+      </div>
+
+      <!-- 통계 요약 -->
+      ${statRows.length > 0 ? `
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px">📊 기간 내 출고 통계 (출고+교환출고 기준)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${statRows.map(s => `
+            <div style="background:var(--al);border:1px solid #d0dff8;border-radius:8px;padding:8px 12px;min-width:90px;text-align:center">
+              <div style="font-size:11px;color:var(--muted)">${s.item}</div>
+              <div style="font-size:12px;font-weight:600">${s.size}</div>
+              <div style="font-size:18px;font-weight:700;color:var(--accent)">${s.qty}</div>
+              <div style="font-size:10px;color:var(--muted)">개</div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- 이력 테이블 -->
       <div class="sec-hd">
-        <div style="font-size:12px;color:var(--muted)">전체 ${allDisp.length}건</div>
-        <button class="btn bo" onclick="exportDispatchHistory()">📥 엑셀 다운로드</button>
+        <span style="font-size:12px;color:var(--muted)">총 ${filtered.length}건</span>
+        <button class="btn bo btn-sm" onclick="exportDispatchHistory()">📥 엑셀 다운로드</button>
       </div>
       <div class="tw"><table class="tb">
         <thead><tr><th>일시</th><th>이름</th><th>과정</th><th>품목</th><th>사이즈</th><th>유형</th><th>수량</th><th>비고</th></tr></thead>
-        <tbody>${allDisp.map(d => {
+        <tbody>${filtered.slice(0, 200).map(d => {
           const dt = d.createdAt?.toDate?.()?.toLocaleString?.('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})||'—';
-          let tb;
-          if(d.type==='출고') tb=`<span class="badge bok">출고</span>`;
-          else if(d.type==='반품') tb=`<span class="badge berr">반품</span>`;
-          else if(d.type==='교환출고') tb=`<span class="badge binfo">교환출고</span>`;
-          else if(d.type==='교환반납') tb=`<span class="badge bneu">교환반납(${d.exchangeType})</span>`;
-          else if(d.type==='미수령') tb=`<span class="badge bwarn">미수령</span>`;
-          else tb=`<span class="badge bneu">${d.type}</span>`;
-          return `<tr><td>${dt}</td><td>${d.studentName}</td><td>${d.course||'—'}</td><td>${d.item}</td><td>${d.size}</td><td>${tb}</td><td>${d.qty||1}</td><td style="font-size:11px">${d.note||''}</td></tr>`;
+          const tb = d.type==='출고' ? `<span class="badge bok">출고</span>`
+            : d.type==='반품' ? `<span class="badge berr">반품</span>`
+            : d.type==='교환출고' ? `<span class="badge binfo">교환출고</span>`
+            : d.type==='미수령' ? `<span class="badge bwarn">미수령</span>`
+            : `<span class="badge bneu">${d.type}</span>`;
+          return `<tr><td style="font-size:11px">${dt}</td><td>${d.studentName||'—'}</td>
+            <td>${d.course||'—'}</td><td>${d.item}</td><td>${d.size}</td>
+            <td>${tb}</td><td>${d.qty||1}</td>
+            <td style="font-size:11px;color:var(--muted)">${d.note||''}</td></tr>`;
         }).join('')}</tbody>
-      </table></div>`;
+      </table></div>
+      ${filtered.length > 200 ? `<div class="ibox" style="margin-top:8px">⚠ 최대 200건만 표시됩니다. 전체 데이터는 엑셀 다운로드를 이용하세요.</div>` : ''}`;
   } else if (studentTabSel === 'dispatch_upload') {
     // 출고이력 업로드 탭 (bodyHtml already set above in the dispatch_upload block)
     bodyHtml = bodyHtml || '<div class="notice">파일을 선택해주세요.</div>';
@@ -2984,16 +3024,35 @@ function exportStudentList() {
   XLSX.writeFile(wb, `QUETTA_학생명단_${new Date().toLocaleDateString('ko-KR').replace(/\./g,'').replace(/ /g,'')}.xlsx`);
 }
 function exportDispatchHistory() {
-  const rows = G.dispatches.map(d => ({
+  const fFrom   = document.getElementById('hf_from')?.value   || '';
+  const fTo     = document.getElementById('hf_to')?.value     || '';
+  const fCourse = document.getElementById('hf_course')?.value || '전체';
+  const fItem   = document.getElementById('hf_item')?.value   || '전체';
+  const fType   = document.getElementById('hf_type')?.value   || '전체';
+
+  let data = G.dispatches.filter(d => {
+    const dt = d.createdAt?.toDate?.();
+    if (!dt) return false;
+    const ds = dt.toISOString().split('T')[0];
+    if (fFrom && ds < fFrom) return false;
+    if (fTo   && ds > fTo)   return false;
+    if (fCourse !== '전체' && d.course !== fCourse) return false;
+    if (fItem   !== '전체' && d.item   !== fItem)   return false;
+    if (fType   !== '전체' && d.type   !== fType)   return false;
+    return true;
+  }).sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0));
+
+  const rows = data.map(d => ({
     '일시': d.createdAt?.toDate?.()?.toLocaleString?.('ko-KR')||'',
-    '이름': d.studentName||'', '수험번호': d.examNo||'', '과정': d.course||'',
-    '품목': d.item||'', '사이즈': d.size||'', '유형': d.type||'',
-    '수량': d.qty||1, '비고': d.note||''
+    '이름': d.studentName||'', '수험번호': d.examNo||'',
+    '과정': d.course||'', '품목': d.item||'', '사이즈': d.size||'',
+    '유형': d.type||'', '수량': d.qty||1, '비고': d.note||''
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '출고이력');
-  XLSX.writeFile(wb, `QUETTA_출고이력_${new Date().toLocaleDateString('ko-KR').replace(/\./g,'').replace(/ /g,'')}.xlsx`);
+  const range = (fFrom||fTo) ? ('_'+fFrom+'~'+fTo) : '';
+  XLSX.writeFile(wb, 'QUETTA_출고이력'+range+'.xlsx');
 }
 
 /* ═══════════════════════════════════════════════
