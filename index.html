@@ -1654,13 +1654,13 @@ function renderStock() {
         const inp = (t) => `<input type="number" min="0" value="0" id="chk_${t}_${item}_${sz}"
           style="width:62px;padding:4px;border:1.5px solid var(--bdr);border-radius:6px;text-align:center;
           font-family:var(--font);font-size:11px;outline:none"
-          oninput="calcCheckSum('${item}','${sz}',${sysTotal})">`;
+          oninput="calcCheckSum(this)">`;
         rows += `<tr class="${si===0?'gc':''}">
           ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left">${item}</td>`:''}
           <td>${sz}</td>
           ${inp('창고')}</td><td>${inp('교판실')}</td><td>${inp('샘플')}</td><td>${inp('불량')}</td>
           <td style="font-weight:700;color:var(--ok)" id="chksum_${item}_${sz}">0</td>
-          <td style="font-weight:700;color:var(--accent)">${sysTotal}</td>
+          <td style="font-weight:700;color:var(--accent)" id="chksys_${item}_${sz}" data-sys="${sysTotal}">${sysTotal}</td>
           <td style="font-weight:700" id="chkdiff_${item}_${sz}">—</td>
           <td><input type="text" id="chknote_${item}_${sz}" placeholder="사유..."
             style="width:130px;padding:4px 7px;border:1.5px solid var(--bdr);border-radius:6px;
@@ -1921,22 +1921,6 @@ function getWeekId() {
   return `${d.getFullYear()}-W${String(wk).padStart(2,'0')}`;
 }
 
-function calcCheckDiff() {
-  const { stock } = calcStock();
-  Object.entries(G.cfg.items).forEach(([item, cfg]) => {
-    cfg.sizes.forEach(sz => {
-      const inp = document.getElementById(`chk_${item}_${sz}`);
-      const diffEl = document.getElementById(`chkdiff_${item}_${sz}`);
-      if (!inp || !diffEl) return;
-      const actual = parseInt(inp.value);
-      if (isNaN(actual)) { diffEl.textContent = '—'; return; }
-      const sys = stock[item]?.[sz] || 0;
-      const diff = actual - sys;
-      diffEl.innerHTML = diff === 0 ? `<span style="color:var(--ok)">✓</span>` :
-        diff > 0 ? `<span class="pos">+${diff}</span>` : `<span class="neg">${diff}</span>`;
-    });
-  });
-}
 
 async function cancelStockInItem(id, item, size, qty) {
   if (!confirm(`${item} ${size} 입고 ${qty}개를 취소하시겠습니까?\n현재 누적 재고에서 ${qty}개가 차감됩니다.`)) return;
@@ -2075,19 +2059,33 @@ async function deleteAllStockInHistory() {
 }
 
 /* ── 실재고 체크 합계 실시간 계산 ── */
-function calcCheckSum(item, sz, sysTotal) {
-  const창고 = parseInt(document.getElementById(`chk_창고_${item}_${sz}`)?.value)||0;
-  const교판실 = parseInt(document.getElementById(`chk_교판실_${item}_${sz}`)?.value)||0;
-  const샘플 = parseInt(document.getElementById(`chk_샘플_${item}_${sz}`)?.value)||0;
-  const불량 = parseInt(document.getElementById(`chk_불량_${item}_${sz}`)?.value)||0;
-  const sum = 창고 + 교판실 + 샘플 + 불량;
-  const sumEl = document.getElementById(`chksum_${item}_${sz}`);
-  const diffEl = document.getElementById(`chkdiff_${item}_${sz}`);
-  if (sumEl) sumEl.textContent = sum;
+function calcCheckSum(el) {
+  // el의 id에서 타입_품목_사이즈 추출 (예: chk_창고_후드집업_M)
+  const parts = el.id.split('_');
+  // parts[0]=chk, parts[1]=타입, parts[2..n-1]=item, parts[n]=size
+  const sz   = parts[parts.length - 1];
+  const type = parts[1];
+  const item = parts.slice(2, parts.length - 1).join('_');
+
+  const창고  = parseInt(document.getElementById('chk_창고_'  + item + '_' + sz)?.value)||0;
+  const교판실 = parseInt(document.getElementById('chk_교판실_' + item + '_' + sz)?.value)||0;
+  const샘플  = parseInt(document.getElementById('chk_샘플_'  + item + '_' + sz)?.value)||0;
+  const불량  = parseInt(document.getElementById('chk_불량_'  + item + '_' + sz)?.value)||0;
+  const sum  = 창고 + 교판실 + 샘플 + 불량;
+
+  const sysEl  = document.getElementById('chksys_'  + item + '_' + sz);
+  const sumEl  = document.getElementById('chksum_'  + item + '_' + sz);
+  const diffEl = document.getElementById('chkdiff_' + item + '_' + sz);
+  const sysTotal = sysEl ? parseInt(sysEl.dataset.sys || 0) : 0;
+
+  if (sumEl)  sumEl.textContent = sum;
   if (diffEl) {
     const d = sum - sysTotal;
-    diffEl.innerHTML = d===0 ? '<span style="color:var(--ok)">✓</span>'
-      : d>0 ? `<span class="pos">+${d}</span>` : `<span class="neg">${d}</span>`;
+    diffEl.innerHTML = d===0
+      ? '<span style="color:var(--ok)">✓</span>'
+      : d>0
+        ? '<span class="pos">+' + d + '</span>'
+        : '<span class="neg">' + d + '</span>';
   }
 }
 
