@@ -1144,18 +1144,23 @@ async function confirmReturn() {
    출고 삭제
    ═══════════════════════════════════════════════ */
 async function delDispatch(id) {
-  // 출고 유형에 따라 메시지 다르게
   const d = G.dispatches.find(x => x.id === id);
   const typeLabel = d?.type === '출고' ? '출고취소' : d?.type === '미수령' ? '미수령취소' : '삭제';
   const msg = d?.type === '출고'
     ? `⚠ ${d.studentName} — ${d.item} ${d.size} 출고를 취소하시겠습니까?\n취소하면 재고가 즉시 복원됩니다.`
     : '이 기록을 삭제하시겠습니까? 재고에 즉시 반영됩니다.';
   if (!confirm(msg)) return;
+  // 현재 검색 학생 이름 저장
+  const currentSearch = d?.studentName || G.dispatchSearch || '';
   try {
     await updateDoc('dispatches', id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
     await loadAll();
     showToast(`${typeLabel} 완료 — 재고 복원됨`, 's');
-    if (G.activeTab === 'dispatch') renderDispatch(G.dispatchSearch);
+    // 현재 학생 페이지 유지
+    if (G.activeTab === 'dispatch') {
+      G.dispatchSearch = currentSearch;
+      renderDispatch(currentSearch);
+    }
     if (G.activeTab === 'missing') renderMissing();
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
