@@ -1662,9 +1662,9 @@ function renderStock() {
     bodyHtml = '<div class="ibox">📋 재고 조사 일시를 입력하면 <strong>해당 시각 기준 시스템재고</strong>와 비교합니다.<br>실재고 = 창고 + 교판실 + 샘플 + 불량 | 시스템재고는 불량 포함</div>'+
       '<div class="fr" style="align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+
         '<div class="fg"><label>조사 일자 *</label>'+
-          '<input type="date" id="checkDateInp" value="'+checkDate+'" onchange="G._checkDate=this.value;selStockTab('check')" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none"></div>'+
+          '<input type="date" id="checkDateInp" value="'+checkDate+'" onchange="G._checkDate=this.value;selStockTab(&quot;check&quot;)" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none"></div>'+
         '<div class="fg"><label>조사 시간 *</label>'+
-          '<select id="checkHourInp" onchange="G._checkHour=parseInt(this.value);selStockTab('check')" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">'+hours+'</select></div>'+
+          '<select id="checkHourInp" onchange="G._checkHour=parseInt(this.value);selStockTab(&quot;check&quot;)" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">'+hours+'</select></div>'+
         '<div style="font-size:12px;color:var(--muted);padding-bottom:9px">기준: <strong>'+checkDate+' '+(checkHour<10?'0'+checkHour:checkHour)+':59 이전</strong></div>'+
         '<div style="margin-top:auto;display:flex;gap:8px">'+
           '<button class="btn bo btn-sm" onclick="downloadCheckForm()">📥 양식 다운로드</button>'+
