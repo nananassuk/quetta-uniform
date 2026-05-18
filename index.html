@@ -415,22 +415,23 @@ async function saveConfig() {
    데이터 로드
    ═══════════════════════════════════════════════ */
 async function loadAll() {
-  const [students, dispatches, stockDocs, checkDocs, stockHistDocs] = await Promise.all([
+  const [students, dispatches, checkDocs, stockHistDocs] = await Promise.all([
     getDocs('students'),
     getDocs('dispatches'),
-    getDocs('stock_in'),
     getDocs('stock_checks'),
     getDocs('stock_in_history'),
   ]);
   G.students   = students;
   G.dispatches = dispatches.filter(d => !d.deleted);
-  G.stockIn    = {};
-  stockDocs.forEach(d => {
-    if (!G.stockIn[d.item]) G.stockIn[d.item] = {};
-    G.stockIn[d.item][d.size] = d.qty || 0;
-  });
   G.stockChecks    = checkDocs;
-  G.stockInHistory = stockHistDocs.sort((a,b)=>b.date?.localeCompare?.(a.date||'')||0);
+  G.stockInHistory = stockHistDocs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+
+  // 전체 재고 = 날짜별 이력 합산
+  G.stockIn = {};
+  stockHistDocs.forEach(d => {
+    if (!G.stockIn[d.item]) G.stockIn[d.item] = {};
+    G.stockIn[d.item][d.size] = (G.stockIn[d.item][d.size] || 0) + (d.qty || 0);
+  });
   buildDispatchCache();
 }
 
@@ -1531,79 +1532,106 @@ function renderStock() {
       bodyHtml = '<div class="notice">입고 수량 입력은 관리자만 가능합니다.</div>';
     } else {
       const today = new Date().toISOString().split('T')[0];
-      // 입고 이력 (날짜별)
       const stockInHistory = G.stockInHistory || [];
-      const recentDates = [...new Set(stockInHistory.map(h=>h.date))].sort().reverse().slice(0,5);
+      // 날짜 목록 (중복제거, 최신순)
+      const allDates = [...new Set(stockInHistory.map(h=>h.date).filter(Boolean))].sort().reverse();
+      // 현재 선택 날짜 (기본: 오늘)
+      const selDate = G._stockInSelDate || today;
+
+      // 선택 날짜의 기존 이력 맵 {item_size: {id, qty, note}}
+      const selDateMap = {};
+      stockInHistory.filter(h=>h.date===selDate).forEach(h=>{
+        selDateMap[`${h.item}_${h.size}`] = h;
+      });
+
+      // 날짜 날짜별 합계 표
+      const dateSummary = {};
+      stockInHistory.forEach(h => {
+        if (!dateSummary[h.date]) dateSummary[h.date] = 0;
+        dateSummary[h.date] += h.qty || 0;
+      });
 
       let rows = '';
       getItemsBySeasonOrdered('동복').concat(getItemsBySeasonOrdered('하복')).forEach((item) => {
         const cfg = G.cfg.items[item];
         if (!cfg) return;
         cfg.sizes.forEach((sz, si) => {
-          const cur = G.stockIn?.[item]?.[sz] || 0;
+          const existing = selDateMap[`${item}_${sz}`];
+          const curQty = existing?.qty || 0;
+          const totalStock = G.stockIn?.[item]?.[sz] || 0;
           rows += `<tr class="${si===0?'gc':''}">
             ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left">${item}</td>`:''}
             <td>${sz}</td>
-            <td style="color:var(--accent);font-weight:700">${cur}</td>
-            <td><input type="number" min="0" value="0" id="sin_${item}_${sz}" placeholder="추가입고" style="width:80px;padding:5px;border:2px solid var(--bdr);border-radius:7px;text-align:center;font-family:var(--font);font-size:12px;outline:none"></td>
-            <td style="color:var(--ok);font-weight:700" id="sinr_${item}_${sz}">${cur}</td>
+            <td style="color:var(--accent);font-weight:700">${totalStock}</td>
+            <td><input type="number" min="0" value="${curQty}" id="sin_${item}_${sz}"
+              style="width:80px;padding:5px;border:2px solid var(--bdr);border-radius:7px;text-align:center;font-family:var(--font);font-size:12px;outline:none"
+              ${existing?'style2="background:#f0fdf4"':''}></td>
           </tr>`;
         });
       });
 
+      const dateOpts = allDates.map(d =>
+        `<option value="${d}" ${d===selDate?'selected':''}>${d} (${dateSummary[d]||0}개)</option>`
+      ).join('');
+
       bodyHtml = `
-        <div class="ibox">📥 추가 입고 수량을 입력하세요. <strong>기존 재고에 더해집니다.</strong> 날짜별로 이력이 저장됩니다.</div>
-        <div class="fr" style="align-items:flex-end;gap:10px;margin-bottom:14px">
+        <div class="ibox">
+          📥 <strong>날짜를 선택</strong>하면 해당 날짜의 기존 입고 수량이 불러와집니다.<br>
+          수량을 수정하고 저장하면 <strong>해당 날짜 이력이 덮어씌워집니다.</strong>
+        </div>
+        <div class="fr" style="align-items:flex-end;gap:10px;margin-bottom:14px;flex-wrap:wrap">
           <div class="fg">
             <label>입고 일자 *</label>
-            <input type="date" id="stockInDate" value="${today}" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
+            <input type="date" id="stockInDate" value="${selDate}"
+              onchange="G._stockInSelDate=this.value;selStockTab('input')"
+              style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
+          </div>
+          <div class="fg">
+            <label>기존 날짜 불러오기</label>
+            <select onchange="G._stockInSelDate=this.value;document.getElementById('stockInDate').value=this.value;selStockTab('input')"
+              style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none;min-width:200px">
+              <option value="">— 기존 날짜 선택 —</option>
+              ${dateOpts}
+            </select>
           </div>
           <div class="fg">
             <label>비고 (선택)</label>
-            <input type="text" id="stockInNote" placeholder="예: 1차 납품" style="min-width:180px;padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
+            <input type="text" id="stockInNote" value="${stockInHistory.find(h=>h.date===selDate)?.note||''}"
+              placeholder="예: 1차 납품"
+              style="min-width:160px;padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
           </div>
-          <button class="btn bp" onclick="saveStockIn()">💾 입고 저장</button>
+          <button class="btn bp" onclick="saveStockIn()">💾 저장 (덮어쓰기)</button>
+          ${allDates.includes(selDate) ? `<button class="btn be btn-sm" onclick="deleteStockInDate('${selDate}')">🗑 이 날짜 전체 삭제</button>` : ''}
         </div>
         <div class="tw">
           <table class="tb">
-            <thead><tr><th>품목</th><th>사이즈</th><th>현재 누적 재고</th><th>추가 입고 수량</th><th>저장 후 재고</th></tr></thead>
-            <tbody id="stockInBody">${rows}</tbody>
+            <thead><tr><th>품목</th><th>사이즈</th><th>전체 누적 재고</th><th>${selDate} 입고수량</th></tr></thead>
+            <tbody>${rows}</tbody>
           </table>
         </div>
-        ${recentDates.length > 0 ? `
+        ${allDates.length > 0 ? `
         <div style="margin-top:16px">
-          <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px">📋 최근 입고 이력 (취소 가능)</div>
+          <div class="sec-hd">
+            <div style="font-size:12px;font-weight:700;color:var(--muted)">📋 입고 날짜별 현황</div>
+            <button class="btn be btn-sm" onclick="deleteAllStockInHistory()">⚠ 입고이력 전체 삭제</button>
+          </div>
           <div class="tw"><table class="tb">
-            <thead><tr><th>날짜</th><th>품목</th><th>사이즈</th><th>입고수량</th><th>비고</th><th>관리</th></tr></thead>
-            <tbody>${stockInHistory.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,50).map(h=>`
-              <tr id="sihr_${h.id}">
-                <td>${h.date}</td><td>${h.item}</td><td>${h.size}</td>
-                <td style="font-weight:700;color:var(--ok)">+${h.qty}</td>
-                <td style="font-size:11px;color:var(--muted)">${h.note||''}</td>
-                <td style="display:flex;gap:4px">
-                  <button class="btn bo btn-xs" onclick="editStockInItem('${h.id}','${h.item}','${h.size}',${h.qty},'${h.date}','${h.note||''}')">수정</button>
-                  <button class="btn be btn-xs" onclick="cancelStockInItem('${h.id}','${h.item}','${h.size}',${h.qty})">입고취소</button>
-                </td>
-              </tr>
-            `).join('')}</tbody>
+            <thead><tr><th>날짜</th><th>총 입고 수량</th><th>비고</th><th>관리</th></tr></thead>
+            <tbody>${allDates.map(d => {
+              const note = stockInHistory.find(h=>h.date===d)?.note || '';
+              const total = stockInHistory.filter(h=>h.date===d).reduce((s,h)=>s+(h.qty||0),0);
+              return `<tr ${d===selDate?'style="background:#eef3fd"':''}>
+                <td style="font-weight:600;cursor:pointer;color:var(--accent)" onclick="G._stockInSelDate='${d}';document.getElementById('stockInDate').value='${d}';selStockTab('input')">${d}</td>
+                <td>${total}개</td>
+                <td style="font-size:11px;color:var(--muted)">${note}</td>
+                <td><button class="btn be btn-xs" onclick="deleteStockInDate('${d}')">삭제</button></td>
+              </tr>`;
+            }).join('')}</tbody>
           </table></div>
         </div>` : ''}`;
-
-      // 실시간 합계 미리보기
-      setTimeout(() => {
-        document.querySelectorAll('[id^="sin_"]').forEach(inp => {
-          inp.addEventListener('input', () => {
-            const parts = inp.id.replace('sin_','').split('_');
-            const sz = parts.pop();
-            const item = parts.join('_');
-            const cur = G.stockIn?.[item]?.[sz] || 0;
-            const add = parseInt(inp.value) || 0;
-            const resEl = document.getElementById(`sinr_${item}_${sz}`);
-            if (resEl) resEl.textContent = cur + add;
-          });
-        });
-      }, 100);
     }
+
+
 
   } else if (stockTabSel === 'check') {
     // 실재고 체크 입력
@@ -1818,37 +1846,76 @@ async function saveStockIn() {
   const note = document.getElementById('stockInNote')?.value.trim() || '';
   if (!date) { showToast('입고 일자를 선택해주세요.', 'w'); return; }
 
-  const additions = [];
-  document.querySelectorAll('[id^="sin_"]').forEach(inp => {
-    const qty = parseInt(inp.value) || 0;
-    if (qty <= 0) return;
-    const parts = inp.id.replace('sin_','').split('_');
-    const sz = parts.pop();
-    const item = parts.join('_');
-    additions.push({ item, size: sz, qty });
+  const items = getItemsBySeasonOrdered('동복').concat(getItemsBySeasonOrdered('하복'));
+  const updates = [];
+  items.forEach(item => {
+    const cfg = G.cfg.items[item];
+    if (!cfg) return;
+    cfg.sizes.forEach(sz => {
+      const qty = parseInt(document.getElementById(`sin_${item}_${sz}`)?.value) || 0;
+      updates.push({ item, size: sz, qty, date, note });
+    });
   });
 
-  if (additions.length === 0) { showToast('추가 입고 수량이 없습니다.', 'w'); return; }
-
   try {
+    showToast('저장 중...', 'w');
+    // 해당 날짜의 기존 이력 삭제 후 새로 저장 (덮어쓰기)
+    const existing = G.stockInHistory.filter(h => h.date === date);
     const CHUNK = 400;
-    // 1. 입고 이력 저장
-    for (let i = 0; i < additions.length; i += CHUNK) {
+
+    // 기존 삭제
+    for (let i = 0; i < existing.length; i += CHUNK) {
       const batch = db.batch();
-      additions.slice(i, i+CHUNK).forEach(a => {
-        batch.set(db.collection('stock_in_history').doc(), { ...a, date, note, createdBy: G.role, createdAt: firebase.firestore.Timestamp.now() });
+      existing.slice(i, i+CHUNK).forEach(h => batch.delete(db.collection('stock_in_history').doc(h.id)));
+      await batch.commit();
+    }
+
+    // 새로 저장 (qty>0인 것만)
+    const toSave = updates.filter(u => u.qty > 0);
+    for (let i = 0; i < toSave.length; i += CHUNK) {
+      const batch = db.batch();
+      toSave.slice(i, i+CHUNK).forEach(u => {
+        batch.set(db.collection('stock_in_history').doc(), {
+          ...u, createdBy: G.role, createdAt: firebase.firestore.Timestamp.now()
+        });
       });
       await batch.commit();
     }
-    // 2. 누적 재고 업데이트 (stock_in에 합산)
-    const updates = [];
-    additions.forEach(a => {
-      const cur = G.stockIn?.[a.item]?.[a.size] || 0;
-      updates.push(setDoc('stock_in', `${a.item}_${a.size}`, { item: a.item, size: a.size, qty: cur + a.qty }));
-    });
-    await Promise.all(updates);
+
     await loadAll();
-    showToast(`${date} 입고 저장 완료 (${additions.length}종)`, 's');
+    G._stockInSelDate = date;
+    showToast(`${date} 입고 저장 완료`, 's');
+    renderStock();
+  } catch(e) { showToast('오류: '+e.message,'e'); }
+}
+
+async function deleteStockInDate(date) {
+  if (!confirm(`${date} 날짜의 입고 이력을 전체 삭제하시겠습니까?\n해당 날짜 입고 수량이 재고에서 차감됩니다.`)) return;
+  try {
+    const existing = G.stockInHistory.filter(h => h.date === date);
+    const CHUNK = 400;
+    for (let i = 0; i < existing.length; i += CHUNK) {
+      const batch = db.batch();
+      existing.slice(i, i+CHUNK).forEach(h => batch.delete(db.collection('stock_in_history').doc(h.id)));
+      await batch.commit();
+    }
+    await loadAll();
+    if (G._stockInSelDate === date) G._stockInSelDate = null;
+    showToast(`${date} 입고 이력 삭제 완료`, 's');
+    renderStock();
+  } catch(e) { showToast('오류: '+e.message,'e'); }
+}
+
+async function deleteAllStockInHistory() {
+  if (!confirm('⚠ 모든 입고 이력을 삭제하시겠습니까?\n재고가 0으로 초기화됩니다.')) return;
+  if (!confirm('정말 전체 삭제합니다. 되돌릴 수 없습니다.')) return;
+  try {
+    await batchDeleteAll('stock_in_history');
+    // 기존 stock_in도 초기화
+    await batchDeleteAll('stock_in');
+    await loadAll();
+    G._stockInSelDate = null;
+    showToast('입고 이력 전체 삭제 완료', 's');
     renderStock();
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
