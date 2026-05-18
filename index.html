@@ -1640,25 +1640,48 @@ function renderStock() {
     const checkHour = G._checkHour !== undefined ? G._checkHour : nowH;
     const sysAtTime = calcStockAtTime(checkDate, checkHour);
     const S = (w) => 'style="width:'+w+'px;padding:4px;border:1.5px solid var(--bdr);border-radius:6px;text-align:center;font-family:var(--font);font-size:11px;outline:none"';
+
+    // 기존 저장된 데이터 불러오기 (같은 날짜+시간)
+    const existingMap = {};
+    G.stockChecks.filter(c => c.checkDate === checkDate && c.checkHour === checkHour)
+      .forEach(c => { existingMap[c.item+'_'+c.size] = c; });
+    const hasExisting = Object.keys(existingMap).length > 0;
+
     let rows = '';
     getItemsBySeasonOrdered('동복').concat(getItemsBySeasonOrdered('하복')).forEach((item) => {
       const cfg = G.cfg.items[item]; if (!cfg) return;
       cfg.sizes.forEach((sz, si) => {
         const sysTotal = (sysAtTime.stock[item]?.[sz]||0) + (sysAtTime.defect[item]?.[sz]||0);
-        const inpHtml = (t) => '<input type="number" min="0" value="0" id="chk_'+t+'_'+item+'_'+sz+'" '+S(62)+' oninput="calcCheckSum(this)">';
-        rows += '<tr class="'+(si===0?'gc':'')+'">'+
+        const ex = existingMap[item+'_'+sz];
+        // 기존값 있으면 채우기, 없으면 0
+        const v창고  = ex ? (ex.창고  || 0) : 0;
+        const v교판실 = ex ? (ex.교판실 || 0) : 0;
+        const v샘플  = ex ? (ex.샘플  || 0) : 0;
+        const v불량  = ex ? (ex.불량  || 0) : 0;
+        const vSum   = v창고 + v교판실 + v샘플 + v불량;
+        const vDiff  = vSum - sysTotal;
+        const vNote  = ex ? (ex.note || '') : '';
+        const diffHtml = vSum === 0 && !ex ? '—'
+          : vDiff === 0 ? '<span style="color:var(--ok)">✓</span>'
+          : vDiff > 0 ? '<span class="pos">+'+vDiff+'</span>'
+          : '<span class="neg">'+vDiff+'</span>';
+        const inpHtml = (t, val) => '<input type="number" min="0" value="'+val+'" id="chk_'+t+'_'+item+'_'+sz+'" '+S(62)+' oninput="calcCheckSum(this)">';
+        rows += '<tr class="'+(si===0?'gc':'')+(ex?' style="background:#f0fdf4"':'')+'">'+
           (si===0?'<td class="thd" rowspan="'+cfg.sizes.length+'" style="text-align:left">'+item+'</td>':'')+
           '<td>'+sz+'</td>'+
-          '<td>'+inpHtml('창고')+'</td><td>'+inpHtml('교판실')+'</td>'+
-          '<td>'+inpHtml('샘플')+'</td><td>'+inpHtml('불량')+'</td>'+
-          '<td style="font-weight:700;color:var(--ok)" id="chksum_'+item+'_'+sz+'">0</td>'+
+          '<td>'+inpHtml('창고',v창고)+'</td><td>'+inpHtml('교판실',v교판실)+'</td>'+
+          '<td>'+inpHtml('샘플',v샘플)+'</td><td>'+inpHtml('불량',v불량)+'</td>'+
+          '<td style="font-weight:700;color:var(--ok)" id="chksum_'+item+'_'+sz+'">'+vSum+'</td>'+
           '<td style="font-weight:700;color:var(--accent)" id="chksys_'+item+'_'+sz+'" data-sys="'+sysTotal+'">'+sysTotal+'</td>'+
-          '<td style="font-weight:700" id="chkdiff_'+item+'_'+sz+'">—</td>'+
-          '<td><input type="text" id="chknote_'+item+'_'+sz+'" placeholder="사유..." '+S(130)+'></td>'+
+          '<td style="font-weight:700" id="chkdiff_'+item+'_'+sz+'">'+diffHtml+'</td>'+
+          '<td><input type="text" id="chknote_'+item+'_'+sz+'" value="'+vNote+'" placeholder="사유..." '+S(130)+'></td>'+
           '</tr>';
       });
     });
     const hours = Array.from({length:24},(_,i)=>'<option value="'+i+'" '+(i===checkHour?'selected':'')+'>'+(i<10?'0'+i:i)+'시</option>').join('');
+    const existingBadge = hasExisting
+      ? '<span style="background:#dcfce7;color:#166534;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600">✓ 기존 데이터 불러옴 — 수정 후 저장하세요</span>'
+      : '<span style="background:#f1f5f9;color:var(--muted);padding:4px 10px;border-radius:6px;font-size:11px">새 조사 입력</span>';
     bodyHtml = '<div class="ibox">📋 재고 조사 일시를 입력하면 <strong>해당 시각 기준 시스템재고</strong>와 비교합니다.<br>실재고 = 창고 + 교판실 + 샘플 + 불량 | 시스템재고는 불량 포함</div>'+
       '<div class="fr" style="align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+
         '<div class="fg"><label>조사 일자 *</label>'+
@@ -1666,6 +1689,7 @@ function renderStock() {
         '<div class="fg"><label>조사 시간 *</label>'+
           '<select id="checkHourInp" onchange="G._checkHour=parseInt(this.value);selStockTab(&quot;check&quot;)" style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">'+hours+'</select></div>'+
         '<div style="font-size:12px;color:var(--muted);padding-bottom:9px">기준: <strong>'+checkDate+' '+(checkHour<10?'0'+checkHour:checkHour)+':59 이전</strong></div>'+
+        existingBadge+
         '<div style="margin-top:auto;display:flex;gap:8px">'+
           '<button class="btn bo btn-sm" onclick="downloadCheckForm()">📥 양식 다운로드</button>'+
           '<button class="btn bp" onclick="saveStockCheck()">💾 실재고 저장</button>'+
@@ -1759,8 +1783,12 @@ function renderStock() {
             ${sessionKeys.length===0?'<option>저장된 이력 없음</option>':sessOpts}
           </select>
           ${sessDate?`<span style="font-size:12px;color:var(--muted)">기준: ${sessDate} ${sessHour!==undefined?String(sessHour).padStart(2,'0')+'시':''}</span>`:''}
+          ${sessDate?`<button class="btn bp btn-sm" onclick="loadCheckForEdit('${sessDate}',${sessHour})">✏️ 이 데이터 수정하기</button>`:''}
         </div>
-        <button class="btn bo" onclick="exportStockReport()">📥 엑셀 다운로드</button>
+        <div style="display:flex;gap:6px">
+          ${sessDate&&canWrite()?`<button class="btn be btn-sm" onclick="deleteStockCheck('${selSess}')">🗑 이 이력 삭제</button>`:''}
+          <button class="btn bo btn-sm" onclick="exportStockReport()">📥 엑셀 다운로드</button>
+        </div>
       </div>
       <div class="tw"><table class="tb">
         <thead>
@@ -2068,6 +2096,49 @@ function downloadCheckForm() {
   XLSX.writeFile(wb, `QUETTA_실재고체크양식_${new Date().toLocaleDateString('ko-KR').replace(/\./g,'').replace(/ /g,'')}.xlsx`);
 }
 
+/* ── 실재고 이력 수정용 불러오기 ── */
+function loadCheckForEdit(date, hour) {
+  G._checkDate = date;
+  G._checkHour = hour;
+  stockTabSel = 'check';
+  renderStock();
+  // 기존 데이터 입력칸에 채우기
+  setTimeout(() => {
+    const existing = G.stockChecks.filter(c => c.checkDate === date && c.checkHour === hour);
+    existing.forEach(c => {
+      ['창고','교판실','샘플','불량'].forEach(t => {
+        const el = document.getElementById('chk_' + t + '_' + c.item + '_' + c.size);
+        if (el) el.value = c[t] || 0;
+      });
+      const noteEl = document.getElementById('chknote_' + c.item + '_' + c.size);
+      if (noteEl) noteEl.value = c.note || '';
+      // 합계·차이 다시 계산
+      const sysEl = document.getElementById('chksys_' + c.item + '_' + c.size);
+      if (sysEl) calcCheckSum({ id: 'chk_창고_' + c.item + '_' + c.size });
+    });
+    showToast(`${date} ${String(hour).padStart(2,'0')}시 데이터 불러옴 — 수정 후 저장하세요`, 'w');
+  }, 300);
+}
+
+async function deleteStockCheck(sessKey) {
+  if (!confirm('이 실재고 조사 이력을 삭제하시겠습니까?')) return;
+  try {
+    const toDelete = G.stockChecks.filter(c => {
+      const k = c.checkDate ? c.checkDate+'_'+c.checkHour : (c.weekId||'');
+      return k === sessKey;
+    });
+    const CHUNK = 400;
+    for (let i = 0; i < toDelete.length; i += CHUNK) {
+      const batch = db.batch();
+      toDelete.slice(i, i+CHUNK).forEach(c => batch.delete(db.collection('stock_checks').doc(c.id)));
+      await batch.commit();
+    }
+    await loadAll();
+    showToast('삭제 완료', 's');
+    renderStock();
+  } catch(e) { showToast('오류: '+e.message,'e'); }
+}
+
 async function saveStockCheck() {
   const date = document.getElementById('checkDateInp')?.value || G._checkDate;
   const hour = G._checkHour !== undefined ? G._checkHour : new Date().getHours();
@@ -2081,31 +2152,50 @@ async function saveStockCheck() {
     const cfg = G.cfg.items[item];
     if (!cfg) return;
     cfg.sizes.forEach(sz => {
-      const 창고  = parseInt(document.getElementById(`chk_창고_${item}_${sz}`)?.value)||0;
-      const 교판실 = parseInt(document.getElementById(`chk_교판실_${item}_${sz}`)?.value)||0;
-      const 샘플  = parseInt(document.getElementById(`chk_샘플_${item}_${sz}`)?.value)||0;
-      const 불량  = parseInt(document.getElementById(`chk_불량_${item}_${sz}`)?.value)||0;
+      const 창고  = parseInt(document.getElementById('chk_창고_'  + item + '_' + sz)?.value)||0;
+      const 교판실 = parseInt(document.getElementById('chk_교판실_' + item + '_' + sz)?.value)||0;
+      const 샘플  = parseInt(document.getElementById('chk_샘플_'  + item + '_' + sz)?.value)||0;
+      const 불량  = parseInt(document.getElementById('chk_불량_'  + item + '_' + sz)?.value)||0;
       const actual = 창고 + 교판실 + 샘플 + 불량;
-      const note  = document.getElementById(`chknote_${item}_${sz}`)?.value.trim()||'';
+      const note   = document.getElementById('chknote_' + item + '_' + sz)?.value.trim()||'';
       const sysStk = (sysAtTime.stock[item]?.[sz]||0) + (sysAtTime.defect[item]?.[sz]||0);
-      if (창고||교판실||샘플||불량||note) {
-        saves.push(addDoc('stock_checks', {
-          item, size: sz, actual,
-          창고, 교판실, 샘플, 불량,
-          sysStock: sysStk, diff: actual - sysStk,
-          note, weekId: getWeekId(),
-          checkDate: date, checkHour: hour,
-          checkedBy: G.role
-        }));
-      }
+      saves.push({ item, size: sz, actual, 창고, 교판실, 샘플, 불량,
+        sysStock: sysStk, diff: actual - sysStk,
+        note, weekId: getWeekId(), checkDate: date, checkHour: hour, checkedBy: G.role });
     });
   });
 
   if (saves.length === 0) { showToast('입력된 수량이 없습니다.', 'w'); return; }
+
   try {
-    await Promise.all(saves);
+    showToast('저장 중...', 'w');
+
+    // 같은 날짜+시간 기존 데이터 먼저 삭제 (덮어쓰기)
+    const existing = G.stockChecks.filter(c => c.checkDate === date && c.checkHour === hour);
+    if (existing.length > 0) {
+      const CHUNK = 400;
+      for (let i = 0; i < existing.length; i += CHUNK) {
+        const batch = db.batch();
+        existing.slice(i, i+CHUNK).forEach(c => batch.delete(db.collection('stock_checks').doc(c.id)));
+        await batch.commit();
+      }
+    }
+
+    // 새로 저장
+    const CHUNK = 400;
+    for (let i = 0; i < saves.length; i += CHUNK) {
+      const batch = db.batch();
+      saves.slice(i, i+CHUNK).forEach(s => {
+        batch.set(db.collection('stock_checks').doc(), {
+          ...s, createdAt: firebase.firestore.Timestamp.now()
+        });
+      });
+      await batch.commit();
+    }
+
     await loadAll();
-    showToast(`${date} ${String(hour).padStart(2,'0')}시 기준 실재고 저장 완료`, 's');
+    const overwritten = existing.length > 0 ? ` (기존 데이터 덮어쓰기)` : '';
+    showToast(`${date} ${String(hour).padStart(2,'0')}시 실재고 저장 완료${overwritten}`, 's');
     stockTabSel = 'history';
     renderStock();
   } catch(e) { showToast('오류: '+e.message,'e'); }
