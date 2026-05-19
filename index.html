@@ -804,11 +804,21 @@ function selectDispatchStudent(studentId) {
   const s = G.students.find(x => x.id === studentId);
   if (!s) return;
   G.dispatchSearch = s.name;
+  refreshStudentCard(s.name);
+}
+
+// 학생 카드만 새로고침 (탭 전체 재렌더 없이)
+function refreshStudentCard(studentName) {
   const el = document.getElementById('dispatchResult');
-  if (el) el.innerHTML = buildStudentCard(s);
-  // 검색창도 업데이트
-  const searchEl = document.getElementById('dSearch');
-  if (searchEl) searchEl.value = s.name;
+  if (!el) { renderDispatch(studentName); return; }
+  const s = G.students.find(x => x.name === studentName || x.id === studentName);
+  if (s) {
+    el.innerHTML = buildStudentCard(s);
+    const searchEl = document.getElementById('dSearch');
+    if (searchEl) searchEl.value = s.name;
+  } else {
+    renderDispatch(studentName);
+  }
 }
 
 /* 출고관리 빠른 학생 등록 후 출고 */
@@ -881,15 +891,15 @@ function buildStudentCard(s) {
           const { stock } = calcStock();
           const actionBtns = canWrite() && (d.type==='출고'||d.type==='교환출고') ? `
             <button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
-            ${isAdmin()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}
+            ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}
           ` : canWrite() && d.type==='미수령' ? (() => {
             const avail = stock[d.item]?.[d.size] || 0;
             return avail > 0
               ? `<button class="btn bs btn-xs" onclick="receivePendingItem('${d.id}','${s.name}')">✓ 수령처리</button>
-                 ${isAdmin()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}`
+                 ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}`
               : `<span style="font-size:11px;color:var(--err)">재고없음(${avail})</span>
-                 ${isAdmin()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}`;
-          })() : (isAdmin() && d.type !== '교환반납' ? `<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>` : '');
+                 ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}`;
+          })() : (canWrite() && d.type !== '교환반납' ? `<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>` : '');
 
           return `<tr>
             <td>${dt}</td>
@@ -1059,7 +1069,8 @@ async function confirmDispatch() {
     await loadAll();
     closeModal('dispatchModal');
     showToast(`${G.dmStudent.name} 출고 완료`, 's');
-    renderDispatch(G.dmStudent.name);
+    G.dispatchSearch = G.dmStudent.name;
+    refreshStudentCard(G.dmStudent.name);
   } catch(e) { showToast('저장 오류: '+e.message, 'e'); }
 }
 
@@ -1137,7 +1148,8 @@ async function confirmReturn() {
     await loadAll();
     closeModal('returnModal');
     showToast('처리 완료', 's');
-    renderDispatch(d.studentName);
+    G.dispatchSearch = d.studentName;
+    refreshStudentCard(d.studentName);
   } catch(e) { showToast('오류: '+e.message, 'e'); }
 }
 
@@ -1160,7 +1172,7 @@ async function delDispatch(id) {
     // 현재 학생 페이지 유지
     if (G.activeTab === 'dispatch') {
       G.dispatchSearch = currentSearch;
-      renderDispatch(currentSearch);
+      refreshStudentCard(currentSearch);
     }
     if (G.activeTab === 'missing') renderMissing();
   } catch(e) { showToast('오류: '+e.message,'e'); }
@@ -1385,7 +1397,7 @@ async function saveMemo() {
     closeModal('memoModal');
     showToast('메모 저장됨', 's');
     if (G.activeTab==='missing') renderMissing();
-    if (G.activeTab==='dispatch') renderDispatch(G.dispatchSearch||G.memoStudent.name);
+    if (G.activeTab==='dispatch') { G.dispatchSearch = G.dispatchSearch||G.memoStudent.name; refreshStudentCard(G.dispatchSearch); }
     if (G.activeTab==='students') renderStudents();
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
@@ -1417,7 +1429,7 @@ async function receivePendingItem(dispatchId, studentName) {
     await loadAll();
     showToast(`${studentName} — ${d.item} ${d.size} 수령 완료 ✓`, 's');
     // 현재 탭에 따라 화면 갱신
-    if (G.activeTab === 'dispatch') renderDispatch(studentName);
+    if (G.activeTab === 'dispatch') { G.dispatchSearch = studentName; refreshStudentCard(studentName); }
     else if (G.activeTab === 'missing') renderMissing();
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
@@ -1502,7 +1514,7 @@ async function confirmException() {
     closeModal('exceptionModal');
     showToast('예외처리 저장됨', 's');
     if (G.activeTab === 'missing') renderMissing();
-    if (G.activeTab === 'dispatch') renderDispatch(G.emStudent.name);
+    if (G.activeTab === 'dispatch') { G.dispatchSearch = G.emStudent.name; refreshStudentCard(G.emStudent.name); }
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
 
