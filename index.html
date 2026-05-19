@@ -804,20 +804,30 @@ function selectDispatchStudent(studentId) {
   const s = G.students.find(x => x.id === studentId);
   if (!s) return;
   G.dispatchSearch = s.name;
-  refreshStudentCard(s.name);
+  G._dispatchStudentId = studentId; // ID 저장
+  refreshStudentCard(studentId);
 }
 
-// 학생 카드만 새로고침 (탭 전체 재렌더 없이)
-function refreshStudentCard(studentName) {
+// 학생 카드만 새로고침 (ID 우선, 이름 fallback)
+function refreshStudentCard(studentIdOrName) {
   const el = document.getElementById('dispatchResult');
-  if (!el) { renderDispatch(studentName); return; }
-  const s = G.students.find(x => x.name === studentName || x.id === studentName);
+  if (!el) { renderDispatch(G.dispatchSearch); return; }
+  // ID로 먼저 찾기
+  let s = G.students.find(x => x.id === studentIdOrName);
+  // 없으면 저장된 ID로 찾기
+  if (!s && G._dispatchStudentId) s = G.students.find(x => x.id === G._dispatchStudentId);
+  // 마지막 fallback: 이름 (단 1명인 경우만)
+  if (!s) {
+    const byName = G.students.filter(x => x.name === studentIdOrName);
+    if (byName.length === 1) s = byName[0];
+  }
   if (s) {
+    G._dispatchStudentId = s.id;
     el.innerHTML = buildStudentCard(s);
     const searchEl = document.getElementById('dSearch');
     if (searchEl) searchEl.value = s.name;
   } else {
-    renderDispatch(studentName);
+    renderDispatch(G.dispatchSearch);
   }
 }
 
@@ -1070,7 +1080,8 @@ async function confirmDispatch() {
     closeModal('dispatchModal');
     showToast(`${G.dmStudent.name} 출고 완료`, 's');
     G.dispatchSearch = G.dmStudent.name;
-    refreshStudentCard(G.dmStudent.name);
+    G._dispatchStudentId = G.dmStudent.id;
+    refreshStudentCard(G.dmStudent.id);
   } catch(e) { showToast('저장 오류: '+e.message, 'e'); }
 }
 
@@ -1149,7 +1160,8 @@ async function confirmReturn() {
     closeModal('returnModal');
     showToast('처리 완료', 's');
     G.dispatchSearch = d.studentName;
-    refreshStudentCard(d.studentName);
+    G._dispatchStudentId = d.studentId;
+    refreshStudentCard(d.studentId);
   } catch(e) { showToast('오류: '+e.message, 'e'); }
 }
 
@@ -1172,7 +1184,9 @@ async function delDispatch(id) {
     // 현재 학생 페이지 유지
     if (G.activeTab === 'dispatch') {
       G.dispatchSearch = currentSearch;
-      refreshStudentCard(currentSearch);
+      const delStu = G.students.find(x=>x.name===currentSearch);
+      if (delStu) G._dispatchStudentId = delStu.id;
+      refreshStudentCard(G._dispatchStudentId || currentSearch);
     }
     if (G.activeTab === 'missing') renderMissing();
   } catch(e) { showToast('오류: '+e.message,'e'); }
