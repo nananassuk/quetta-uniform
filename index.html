@@ -1175,18 +1175,17 @@ async function delDispatch(id) {
     ? `⚠ ${d.studentName} — ${d.item} ${d.size} 출고를 취소하시겠습니까?\n취소하면 재고가 즉시 복원됩니다.`
     : '이 기록을 삭제하시겠습니까? 재고에 즉시 반영됩니다.';
   if (!confirm(msg)) return;
-  // 현재 검색 학생 이름 저장
-  const currentSearch = d?.studentName || G.dispatchSearch || '';
+  // 학생 ID 저장 (이름 대신 ID로 복원)
+  const targetStudentId = d?.studentId || G._dispatchStudentId;
+  const currentSearch   = d?.studentName || G.dispatchSearch || '';
   try {
     await updateDoc('dispatches', id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
     await loadAll();
     showToast(`${typeLabel} 완료 — 재고 복원됨`, 's');
-    // 현재 학생 페이지 유지
     if (G.activeTab === 'dispatch') {
       G.dispatchSearch = currentSearch;
-      const delStu = G.students.find(x=>x.name===currentSearch);
-      if (delStu) G._dispatchStudentId = delStu.id;
-      refreshStudentCard(G._dispatchStudentId || currentSearch);
+      G._dispatchStudentId = targetStudentId;
+      refreshStudentCard(targetStudentId || currentSearch);
     }
     if (G.activeTab === 'missing') renderMissing();
   } catch(e) { showToast('오류: '+e.message,'e'); }
