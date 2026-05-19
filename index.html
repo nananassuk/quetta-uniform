@@ -1651,9 +1651,10 @@ function renderStock() {
     getItemsBySeasonOrdered('동복').concat(getItemsBySeasonOrdered('하복')).forEach((item) => {
       const cfg = G.cfg.items[item]; if (!cfg) return;
       cfg.sizes.forEach((sz, si) => {
-        const sysTotal = (sysAtTime.stock[item]?.[sz]||0) + (sysAtTime.defect[item]?.[sz]||0);
+        const sysNormal = sysAtTime.stock[item]?.[sz]  || 0;
+        const sysDef    = sysAtTime.defect[item]?.[sz] || 0;
+        const sysTotal  = sysNormal + sysDef;
         const ex = existingMap[item+'_'+sz];
-        // 기존값 있으면 채우기, 없으면 0
         const v창고  = ex ? (ex.창고  || 0) : 0;
         const v교판실 = ex ? (ex.교판실 || 0) : 0;
         const v샘플  = ex ? (ex.샘플  || 0) : 0;
@@ -1672,7 +1673,8 @@ function renderStock() {
           '<td>'+inpHtml('창고',v창고)+'</td><td>'+inpHtml('교판실',v교판실)+'</td>'+
           '<td>'+inpHtml('샘플',v샘플)+'</td><td>'+inpHtml('불량',v불량)+'</td>'+
           '<td style="font-weight:700;color:var(--ok)" id="chksum_'+item+'_'+sz+'">'+vSum+'</td>'+
-          '<td style="font-weight:700;color:var(--accent)" id="chksys_'+item+'_'+sz+'" data-sys="'+sysTotal+'">'+sysTotal+'</td>'+
+          '<td style="font-weight:700;color:var(--accent)" id="chksys_'+item+'_'+sz+'" data-sys="'+sysTotal+'">'+sysNormal+'</td>'+
+          '<td style="font-weight:700;color:var(--err)">'+sysDef+'</td>'+
           '<td style="font-weight:700" id="chkdiff_'+item+'_'+sz+'">'+diffHtml+'</td>'+
           '<td><input type="text" id="chknote_'+item+'_'+sz+'" value="'+vNote+'" placeholder="사유..." '+S(130)+'></td>'+
           '</tr>';
@@ -1700,8 +1702,10 @@ function renderStock() {
           '<th rowspan="2">품목</th><th rowspan="2">사이즈</th>'+
           '<th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고 입력</th>'+
           '<th rowspan="2" style="background:#f0fdf4;color:var(--ok)">실재고합계</th>'+
-          '<th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고(불량포함)</th>'+
-          '<th rowspan="2">차이</th><th rowspan="2">차이 사유</th>'+
+          '<th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고</th>'+
+          '<th rowspan="2" style="background:#fff1f2;color:var(--err)">불량재고</th>'+
+          '<th rowspan="2">차이<br><span style="font-size:9px;font-weight:400">(실재고합계 vs 시스템+불량)</span></th>'+
+          '<th rowspan="2">차이 사유</th>'+
         '</tr><tr>'+
           '<th style="background:#f0f9ff">창고</th><th style="background:#f0f9ff">교판실</th>'+
           '<th style="background:#f0f9ff">샘플</th><th style="background:#f0f9ff">불량</th>'+
@@ -1743,9 +1747,11 @@ function renderStock() {
       if (!cfg) return;
       cfg.sizes.forEach((sz, si) => {
         const chk = checkMap[`${item}_${sz}`];
-        const sys  = (sessSysAt.stock[item]?.[sz]||0) + (sessSysAt.defect[item]?.[sz]||0);
+        const sysNormal = sessSysAt.stock[item]?.[sz]  || 0;
+        const sysDef    = sessSysAt.defect[item]?.[sz] || 0;
+        const sysTotal  = sysNormal + sysDef;
         const actual = chk?.actual;
-        const diff = actual !== undefined ? actual - sys : null;
+        const diff = actual !== undefined ? actual - sysTotal : null;
         const diffCell = diff===null ? '—' : diff===0 ? '<span style="color:var(--ok)">✓</span>'
           : diff>0 ? `<span class="pos">+${diff}</span>` : `<span class="neg">${diff}</span>`;
         rows += `<tr class="${si===0?'gc':''}">
@@ -1754,7 +1760,8 @@ function renderStock() {
           <td>${chk?.창고||'—'}</td><td>${chk?.교판실||'—'}</td>
           <td>${chk?.샘플||'—'}</td><td>${chk?.불량||'—'}</td>
           <td style="font-weight:700;color:var(--ok)">${actual!==undefined?actual:'—'}</td>
-          <td style="color:var(--accent);font-weight:700">${sys}</td>
+          <td style="color:var(--accent);font-weight:700">${sysNormal}</td>
+          <td style="color:var(--err);font-weight:700">${sysDef||'—'}</td>
           <td>${diffCell}</td>
           <td style="font-size:11px;color:var(--muted)">${chk?.note||''}</td>
         </tr>`;
@@ -1797,6 +1804,7 @@ function renderStock() {
             <th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고</th>
             <th rowspan="2" style="background:#f0fdf4;color:var(--ok)">실재고합계</th>
             <th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고</th>
+            <th rowspan="2" style="background:#fff1f2;color:var(--err)">불량재고</th>
             <th rowspan="2">차이</th><th rowspan="2">비고</th>
           </tr>
           <tr>
