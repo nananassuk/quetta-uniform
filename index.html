@@ -1230,6 +1230,16 @@ async function delDispatch(id, studentId) {
    미수령 관리
    ═══════════════════════════════════════════════ */
 let missingTabSel = 'unvisited';
+let missingSearch = '';
+function selMissingTab(t) { missingTabSel = t; missingSearch = ''; renderMissing(); }
+function filterBySearch(list) {
+  if (!missingSearch) return list;
+  const q = missingSearch.toLowerCase();
+  return list.filter(s => (s.name||'').toLowerCase().includes(q) || (s.examNo||'').includes(q) || (s.studentNo||'').includes(q));
+}
+function missingSearchBar() {
+  return '<div style="margin-bottom:10px"><input type="text" id="missingSearchInp" value="'+missingSearch+'" placeholder="🔍 이름 또는 수험번호 검색..." oninput="missingSearch=this.value;renderMissing()" style="width:100%;max-width:320px;padding:8px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:12px;outline:none;box-sizing:border-box"></div>';
+}
 function renderMissing() {
   const el = document.getElementById('tab-missing');
   const pendingStudentIds = new Set(G.dispatches.filter(d=>d.type==='미수령').map(d=>d.studentId));
@@ -1266,102 +1276,83 @@ function renderMissing() {
 
   let bodyHtml;
   if (missingTabSel === 'unvisited') {
-    bodyHtml = unvisitedStudents.length === 0 ? '<div class="notice">미방문 미수령 학생이 없습니다. ✅</div>' :
-      `<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">${unvisitedStudents.length}명</span>
-       <button class="btn bo btn-sm" onclick="exportMissingList('unvisited')">📥 엑셀</button></div>
-       <div class="tw"><table class="tb">
-         <thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>학번</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead>
-         <tbody>${unvisitedStudents.map(s=>{
-           const miss=getMissingItems(s);
-           const mStr=miss.map(m=>`${m.key.replace('하의_total','하의')}(${m.got}/${m.need})`).join(', ');
-           return `<tr>
-             <td class="tleft"><strong>${s.name}</strong>${s.memo?` <span style="color:var(--info);font-size:10px">📝</span>`:''}</td>
-             ${examCell(s)}<td>${s.studentNo||'—'}</td><td>${s.course||'—'}</td>
-             <td style="text-align:left"><span class="badge berr">${mStr}</span></td>
-             <td style="display:flex;gap:4px;flex-wrap:wrap">
-               ${isAdmin()?`<button class="btn bo btn-xs" onclick="openExceptionModal('${s.id}')">예외처리</button>`:''}
-               <button class="btn bo btn-xs" ${goDispatch(s.name)}>출고</button>
-               ${wBtn(s)}
-             </td></tr>`;
-         }).join('')}</tbody></table></div>`;
+    const filtered = filterBySearch(unvisitedStudents);
+    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'미방문 미수령 학생이 없습니다. ✅')+'</div>' :
+      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('unvisited')">📥 엑셀</button></div>'+
+      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>학번</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead><tbody>'+
+      filtered.map(s=>{
+        const miss=getMissingItems(s);
+        const mStr=miss.map(m=>(m.key.replace('하의_total','하의')+'('+m.got+'/'+m.need+')')).join(', ');
+        return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' <span style="color:var(--info);font-size:10px">📝</span>':'')+
+          '</td>'+examCell(s)+'<td>'+(s.studentNo||'—')+'</td><td>'+(s.course||'—')+'</td>'+
+          '<td style="text-align:left"><span class="badge berr">'+mStr+'</span></td>'+
+          '<td style="display:flex;gap:4px;flex-wrap:wrap">'+
+          (isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(''+s.id+'')">예외처리</button>':'')+
+          '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고</button>'+wBtn(s)+'</td></tr>';
+      }).join('')+'</tbody></table></div>');
 
   } else if (missingTabSel === 'partial') {
-    bodyHtml = partialStudents.length === 0 ? '<div class="notice">부분수령 학생이 없습니다. ✅</div>' :
-      `<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">${partialStudents.length}명</span>
-       <button class="btn bo btn-sm" onclick="exportMissingList('partial')">📥 엑셀</button></div>
-       <div class="ibox">📋 일부는 수령했지만 아직 받지 못한 항목이 있는 학생입니다. 예외처리 가능.</div>
-       <div class="tw"><table class="tb">
-         <thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead>
-         <tbody>${partialStudents.map(s=>{
-           const miss=getMissingItems(s);
-           const mStr=miss.map(m=>`${m.key.replace('하의_total','하의')}(${m.got}/${m.need})`).join(', ');
-           const excEntries=Object.entries(s.exceptions||{}).filter(([,v])=>v>0);
-           const excStr=excEntries.map(([k,v])=>{
-             const r=(s.exceptionReasons||{})[k]||'';
-             return `<span class="tip-wrap exc-reason-badge">${k.replace('하의_total','하의')} ${v}개 예외${r?`<span class="tip-box">사유: ${r}</span>`:''}</span>`;
-           }).join(' ');
-           return `<tr>
-             <td class="tleft"><strong>${s.name}</strong>${s.memo?` <span style="color:var(--info);font-size:10px">📝</span>`:''}</td>
-             ${examCell(s)}<td>${s.course||'—'}</td>
-             <td style="text-align:left">
-               <span class="badge badge-partial">${mStr}</span>
-               ${excStr?`<div style="margin-top:3px">${excStr}</div>`:''}
-             </td>
-             <td style="display:flex;gap:4px;flex-wrap:wrap">
-               ${isAdmin()?`<button class="btn bo btn-xs" onclick="openExceptionModal('${s.id}')">예외처리</button>`:''}
-               <button class="btn bo btn-xs" ${goDispatch(s.name)}>출고</button>
-               ${wBtn(s)}
-             </td></tr>`;
-         }).join('')}</tbody></table></div>`;
+    const filtered = filterBySearch(partialStudents);
+    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'부분수령 학생이 없습니다. ✅')+'</div>' :
+      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('partial')">📥 엑셀</button></div>'+
+      '<div class="ibox">📋 일부는 수령했지만 아직 받지 못한 항목이 있는 학생입니다.</div>'+
+      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead><tbody>'+
+      filtered.map(s=>{
+        const miss=getMissingItems(s);
+        const mStr=miss.map(m=>(m.key.replace('하의_total','하의')+'('+m.got+'/'+m.need+')')).join(', ');
+        const excEntries=Object.entries(s.exceptions||{}).filter(([,v])=>v>0);
+        const excStr=excEntries.map(([k,v])=>{
+          const r=(s.exceptionReasons||{})[k]||'';
+          return '<span class="tip-wrap exc-reason-badge">'+k.replace('하의_total','하의')+' '+v+'개 예외'+(r?'<span class="tip-box">사유: '+r+'</span>':'')+'</span>';
+        }).join(' ');
+        return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' <span style="color:var(--info);font-size:10px">📝</span>':'')+
+          '</td>'+examCell(s)+'<td>'+(s.course||'—')+'</td>'+
+          '<td style="text-align:left"><span class="badge badge-partial">'+mStr+'</span>'+(excStr?'<div style="margin-top:3px">'+excStr+'</div>':'')+
+          '</td><td style="display:flex;gap:4px;flex-wrap:wrap">'+
+          (isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(''+s.id+'')">예외처리</button>':'')+
+          '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고</button>'+wBtn(s)+'</td></tr>';
+      }).join('')+'</tbody></table></div>');
 
   } else if (missingTabSel === 'shortage') {
     const { stock } = calcStock();
-    bodyHtml = stockShortStudents.length === 0 ? '<div class="notice">재고부족 미수령이 없습니다. ✅</div>' :
-      `<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">${stockShortStudents.length}명</span>
-       <button class="btn bo btn-sm" onclick="exportMissingList('shortage')">📥 엑셀</button></div>
-       <div class="tw"><table class="tb">
-         <thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>재고부족 항목 (버튼 클릭 시 수령처리)</th><th>액션</th></tr></thead>
-         <tbody>${stockShortStudents.map(s=>{
-           const pends=G.dispatches.filter(d=>d.studentId===s.id&&d.type==='미수령');
-           const itemBtns = pends.map(p => {
-             const avail = stock[p.item]?.[p.size] || 0;
-             const hasStock = avail > 0;
-             return hasStock
-               ? `<button class="btn bs btn-xs" style="margin:2px" onclick="receivePendingItem('${p.id}','${s.name}')">
-                    ✓ ${p.item} ${p.size} 수령
-                  </button>`
-               : `<span class="badge bwarn" style="margin:2px" title="재고 ${avail}개">${p.item} ${p.size} (재고없음)</span>`;
-           }).join('');
-           return `<tr>
-             <td class="tleft"><strong>${s.name}</strong>${s.memo?` <span style="color:var(--info);font-size:10px">📝</span>`:''}</td>
-             ${examCell(s)}<td>${s.course||'—'}</td>
-             <td style="text-align:left">${itemBtns}</td>
-             <td style="display:flex;gap:4px;flex-wrap:wrap">
-               <button class="btn bs btn-xs" onclick="convertPendingToDispatch('${s.id}')">전체 수령</button>
-               <button class="btn bo btn-xs" ${goDispatch(s.name)}>조회</button>
-               ${isAdmin()?`<button class="btn bo btn-xs" onclick="cancelPending('${s.id}')">취소</button>`:''}
-               ${wBtn(s)}
-             </td></tr>`;
-         }).join('')}</tbody></table></div>`;
+    const filtered = filterBySearch(stockShortStudents);
+    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'재고부족 미수령이 없습니다. ✅')+'</div>' :
+      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('shortage')">📥 엑셀</button></div>'+
+      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>재고부족항목(버튼=수령)</th><th>액션</th></tr></thead><tbody>'+
+      filtered.map(s=>{
+        const pends=G.dispatches.filter(d=>d.studentId===s.id&&d.type==='미수령');
+        const itemBtns=pends.map(p=>{
+          const avail=stock[p.item]?.[p.size]||0;
+          return avail>0
+            ? '<button class="btn bs btn-xs" style="margin:2px" onclick="receivePendingItem(''+p.id+'',''+s.name+'')">✓ '+p.item+' '+p.size+'</button>'
+            : '<span class="badge bwarn" style="margin:2px">'+p.item+' '+p.size+'(재고없음)</span>';
+        }).join('');
+        return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' <span style="color:var(--info);font-size:10px">📝</span>':'')+
+          '</td>'+examCell(s)+'<td>'+(s.course||'—')+'</td>'+
+          '<td style="text-align:left">'+itemBtns+'</td>'+
+          '<td style="display:flex;gap:4px;flex-wrap:wrap">'+
+          '<button class="btn bs btn-xs" onclick="convertPendingToDispatch(''+s.id+'')">전체수령</button>'+
+          '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>조회</button>'+
+          (isAdmin()?'<button class="btn bo btn-xs" onclick="cancelPending(''+s.id+'')">취소</button>':'')+
+          wBtn(s)+'</td></tr>';
+      }).join('')+'</tbody></table></div>');
 
   } else {
-    bodyHtml = excStudents.length === 0 ? '<div class="notice">예외처리된 학생이 없습니다.</div>' :
-      `<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">${excStudents.length}명</span>
-       <button class="btn bo btn-sm" onclick="exportMissingList('exception')">📥 엑셀</button></div>
-       <div class="tw"><table class="tb">
-         <thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>예외처리내용</th><th>액션</th></tr></thead>
-         <tbody>${excStudents.map(s=>{
-           const reasons=s.exceptionReasons||{};
-           const excStr=Object.entries(s.exceptions||{}).filter(([,v])=>v>0).map(([k,v])=>{
-             const r=reasons[k]||'';
-             return `<span class="tip-wrap exc-reason-badge">${k.replace('하의_total','하의')} ${v}개${r?`<span class="tip-box">사유: ${r}</span>`:''}</span>`;
-           }).join(' ');
-           return `<tr>
-             <td class="tleft"><strong>${s.name}</strong></td>
-             ${examCell(s)}<td>${s.course||'—'}</td>
-             <td style="text-align:left">${excStr}</td>
-             <td>${isAdmin()?`<button class="btn bo btn-xs" onclick="openExceptionModal('${s.id}')">수정</button>`:'—'}</td></tr>`;
-         }).join('')}</tbody></table></div>`;
+    const filtered = filterBySearch(excStudents);
+    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'예외처리된 학생이 없습니다.')+'</div>' :
+      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('exception')">📥 엑셀</button></div>'+
+      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>예외처리내용</th><th>액션</th></tr></thead><tbody>'+
+      filtered.map(s=>{
+        const reasons=s.exceptionReasons||{};
+        const excStr=Object.entries(s.exceptions||{}).filter(([,v])=>v>0).map(([k,v])=>{
+          const r=reasons[k]||'';
+          return '<span class="tip-wrap exc-reason-badge">'+k.replace('하의_total','하의')+' '+v+'개'+(r?'<span class="tip-box">사유: '+r+'</span>':'')+'</span>';
+        }).join(' ');
+        return '<tr><td class="tleft"><strong>'+s.name+'</strong></td>'+
+          examCell(s)+'<td>'+(s.course||'—')+'</td>'+
+          '<td style="text-align:left">'+excStr+'</td>'+
+          '<td>'+(isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(''+s.id+'')">수정</button>':'—')+'</td></tr>';
+      }).join('')+'</tbody></table></div>');
   }
 
   el.innerHTML = `
@@ -1371,19 +1362,18 @@ function renderMissing() {
       <div class="sc"><div class="sc-l">부분수령</div><div class="sc-v" style="color:#7c3aed">${partialStudents.length}</div><div class="sc-s">명</div></div>
       <div class="sc"><div class="sc-l">재고부족</div><div class="sc-v" style="color:var(--warn)">${stockShortStudents.length}</div><div class="sc-s">명</div></div>
       <div class="sc"><div class="sc-l">예외처리</div><div class="sc-v" style="color:var(--accent)">${excStudents.length}</div><div class="sc-s">명</div></div>
-      <div class="sc"><div class="sc-l">퇴소</div><div class="sc-v" style="color:var(--warn)">${G.students.filter(s=>s.withdrawn).length}</div><div class="sc-s">명</div></div>
+      <div class="sc"><div class="sc-l">퇴소</div><div class="sc-v" style="color:var(--warn)">${G.students.filter(s=>s.withdrawn&&!s.isTemporaryException).length}</div><div class="sc-s">명</div></div>
     </div>
     <div class="card">
       <div class="ttabs">
         <button class="ttab ${missingTabSel==='unvisited'?'active':''}" onclick="selMissingTab('unvisited')">미방문 (${unvisitedStudents.length})</button>
         <button class="ttab ${missingTabSel==='partial'?'active':''}"   onclick="selMissingTab('partial')">부분수령 (${partialStudents.length})</button>
         <button class="ttab ${missingTabSel==='shortage'?'active':''}"  onclick="selMissingTab('shortage')">재고부족 (${stockShortStudents.length})</button>
-        <button class="ttab ${missingTabSel==='exception'?'active':''}" onclick="selMissingTab('exception')">예외처리</button>
+        <button class="ttab ${missingTabSel==='exception'?'active':''}" onclick="selMissingTab('exception')">예외처리 (${excStudents.length})</button>
       </div>
       ${bodyHtml}
-    </div>`;
+    </div>\`;
 }
-function selMissingTab(t) { missingTabSel = t; renderMissing(); }
 
 /* 미수령 목록 엑셀 다운로드 */
 function exportMissingList(type) {
@@ -3620,10 +3610,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sidebar').addEventListener('click', e => {
     const item = e.target.closest('.ni[data-tab]');
     if (item) switchTab(item.dataset.tab);
-  });
-  // 모달 외부 클릭 닫기
-  document.querySelectorAll('.overlay').forEach(o => {
-    o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
   });
 });
 </script>
