@@ -1238,7 +1238,18 @@ function filterBySearch(list) {
   return list.filter(s => (s.name||'').toLowerCase().includes(q) || (s.examNo||'').includes(q) || (s.studentNo||'').includes(q));
 }
 function missingSearchBar() {
-  return '<div style="margin-bottom:10px"><input type="text" id="missingSearchInp" value="'+missingSearch+'" placeholder="🔍 이름 또는 수험번호 검색..." oninput="missingSearch=this.value;renderMissing()" style="width:100%;max-width:320px;padding:8px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:12px;outline:none;box-sizing:border-box"></div>';
+  return '<div style="margin-bottom:10px"><input type="text" id="missingSearchInp" value="'+missingSearch+'" placeholder="🔍 이름 또는 수험번호 검색..." oninput="missingSearch=this.value;filterMissingRows()" style="width:100%;max-width:320px;padding:8px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:12px;outline:none;box-sizing:border-box"></div>';
+}
+
+function filterMissingRows() {
+  missingSearch = document.getElementById('missingSearchInp')?.value || '';
+  // 전체 재렌더 대신 행만 필터링
+  const rows = document.querySelectorAll('#tab-missing table tbody tr');
+  const q = missingSearch.toLowerCase();
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
 }
 function renderMissing() {
   const el = document.getElementById('tab-missing');
@@ -1276,7 +1287,7 @@ function renderMissing() {
 
   let bodyHtml;
 
-  function mkExcBtn(sid) { return isAdmin() ? '<button class="btn bo btn-xs" onclick="openExceptionModal(\"'+sid+'\")">예외처리</button>' : ''; }
+  function mkExcBtn(sid) { return isAdmin() ? '<button class="btn bo btn-xs" onclick="openExceptionModal(&quot;'+sid+'&quot;)">예외처리</button>' : ''; }
 
   if (missingTabSel === 'unvisited') {
     const filtered = filterBySearch(unvisitedStudents);
