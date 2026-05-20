@@ -1275,86 +1275,86 @@ function renderMissing() {
   }
 
   let bodyHtml;
+  let bodyHtml;
+
+  function mkExcBtn(sid) { return isAdmin() ? '<button class="btn bo btn-xs" onclick="openExceptionModal(\"'+sid+'\")">예외처리</button>' : ''; }
+
   if (missingTabSel === 'unvisited') {
     const filtered = filterBySearch(unvisitedStudents);
-    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'미방문 미수령 학생이 없습니다. ✅')+'</div>' :
-      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('unvisited')">📥 엑셀</button></div>'+
-      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>학번</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead><tbody>'+
-      filtered.map(s=>{
-        const miss=getMissingItems(s);
-        const mStr=miss.map(m=>(m.key.replace('하의_total','하의')+'('+m.got+'/'+m.need+')')).join(', ');
-        return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' <span style="color:var(--info);font-size:10px">📝</span>':'')+
-          '</td>'+examCell(s)+'<td>'+(s.studentNo||'—')+'</td><td>'+(s.course||'—')+'</td>'+
-          '<td style="text-align:left"><span class="badge berr">'+mStr+'</span></td>'+
-          '<td style="display:flex;gap:4px;flex-wrap:wrap">'+
-          (isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(''+s.id+'')">예외처리</button>':'')+
-          '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고</button>'+wBtn(s)+'</td></tr>';
-      }).join('')+'</tbody></table></div>');
+    let rows = filtered.map(s => {
+      const miss = getMissingItems(s);
+      const mStr = miss.map(m => m.key.replace('하의_total','하의')+'('+m.got+'/'+m.need+')').join(', ');
+      return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' 📝':'')+
+        '</td>'+examCell(s)+'<td>'+(s.studentNo||'—')+'</td><td>'+(s.course||'—')+'</td>'+
+        '<td style="text-align:left"><span class="badge berr">'+mStr+'</span></td>'+
+        '<td style="display:flex;gap:4px;flex-wrap:wrap">'+mkExcBtn(s.id)+
+        '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고</button>'+wBtn(s)+'</td></tr>';
+    }).join('');
+    bodyHtml = missingSearchBar()+(filtered.length===0
+      ?'<div class="notice">'+(missingSearch?'검색 결과 없음':'미방문 미수령 학생이 없습니다. ✅')+'</div>'
+      :'<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList(\'unvisited\')">📥 엑셀</button></div><div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>학번</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
 
   } else if (missingTabSel === 'partial') {
     const filtered = filterBySearch(partialStudents);
-    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'부분수령 학생이 없습니다. ✅')+'</div>' :
-      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('partial')">📥 엑셀</button></div>'+
-      '<div class="ibox">📋 일부는 수령했지만 아직 받지 못한 항목이 있는 학생입니다.</div>'+
-      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead><tbody>'+
-      filtered.map(s=>{
-        const miss=getMissingItems(s);
-        const mStr=miss.map(m=>(m.key.replace('하의_total','하의')+'('+m.got+'/'+m.need+')')).join(', ');
-        const excEntries=Object.entries(s.exceptions||{}).filter(([,v])=>v>0);
-        const excStr=excEntries.map(([k,v])=>{
-          const r=(s.exceptionReasons||{})[k]||'';
-          return '<span class="tip-wrap exc-reason-badge">'+k.replace('하의_total','하의')+' '+v+'개 예외'+(r?'<span class="tip-box">사유: '+r+'</span>':'')+'</span>';
-        }).join(' ');
-        return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' <span style="color:var(--info);font-size:10px">📝</span>':'')+
-          '</td>'+examCell(s)+'<td>'+(s.course||'—')+'</td>'+
-          '<td style="text-align:left"><span class="badge badge-partial">'+mStr+'</span>'+(excStr?'<div style="margin-top:3px">'+excStr+'</div>':'')+
-          '</td><td style="display:flex;gap:4px;flex-wrap:wrap">'+
-          (isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(''+s.id+'')">예외처리</button>':'')+
-          '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고</button>'+wBtn(s)+'</td></tr>';
-      }).join('')+'</tbody></table></div>');
+    let rows = filtered.map(s => {
+      const miss = getMissingItems(s);
+      const mStr = miss.map(m => m.key.replace('하의_total','하의')+'('+m.got+'/'+m.need+')').join(', ');
+      const excStr = Object.entries(s.exceptions||{}).filter(([,v])=>v>0).map(([k,v])=>{
+        const r=(s.exceptionReasons||{})[k]||'';
+        return '<span class="tip-wrap exc-reason-badge">'+k.replace('하의_total','하의')+' '+v+'개 예외'+(r?'<span class="tip-box">사유: '+r+'</span>':'')+'</span>';
+      }).join(' ');
+      return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' 📝':'')+
+        '</td>'+examCell(s)+'<td>'+(s.course||'—')+'</td>'+
+        '<td style="text-align:left"><span class="badge badge-partial">'+mStr+'</span>'+(excStr?'<div style="margin-top:3px">'+excStr+'</div>':'')+
+        '</td><td style="display:flex;gap:4px;flex-wrap:wrap">'+mkExcBtn(s.id)+
+        '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고</button>'+wBtn(s)+'</td></tr>';
+    }).join('');
+    bodyHtml = missingSearchBar()+'<div class="ibox">📋 일부는 수령했지만 아직 받지 못한 항목이 있는 학생입니다.</div>'
+      +(filtered.length===0
+        ?'<div class="notice">'+(missingSearch?'검색 결과 없음':'부분수령 학생이 없습니다. ✅')+'</div>'
+        :'<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList(\'partial\')">📥 엑셀</button></div><div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>미수령항목</th><th>액션</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
 
   } else if (missingTabSel === 'shortage') {
     const { stock } = calcStock();
     const filtered = filterBySearch(stockShortStudents);
-    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'재고부족 미수령이 없습니다. ✅')+'</div>' :
-      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('shortage')">📥 엑셀</button></div>'+
-      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>재고부족항목(버튼=수령)</th><th>액션</th></tr></thead><tbody>'+
-      filtered.map(s=>{
-        const pends=G.dispatches.filter(d=>d.studentId===s.id&&d.type==='미수령');
-        const itemBtns=pends.map(p=>{
-          const avail=stock[p.item]?.[p.size]||0;
-          return avail>0
-            ? '<button class="btn bs btn-xs" style="margin:2px" onclick="receivePendingItem(''+p.id+'',''+s.name+'')">✓ '+p.item+' '+p.size+'</button>'
-            : '<span class="badge bwarn" style="margin:2px">'+p.item+' '+p.size+'(재고없음)</span>';
-        }).join('');
-        return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' <span style="color:var(--info);font-size:10px">📝</span>':'')+
-          '</td>'+examCell(s)+'<td>'+(s.course||'—')+'</td>'+
-          '<td style="text-align:left">'+itemBtns+'</td>'+
-          '<td style="display:flex;gap:4px;flex-wrap:wrap">'+
-          '<button class="btn bs btn-xs" onclick="convertPendingToDispatch(''+s.id+'')">전체수령</button>'+
-          '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>조회</button>'+
-          (isAdmin()?'<button class="btn bo btn-xs" onclick="cancelPending(''+s.id+'')">취소</button>':'')+
-          wBtn(s)+'</td></tr>';
-      }).join('')+'</tbody></table></div>');
+    let rows = filtered.map(s => {
+      const pends = G.dispatches.filter(d=>d.studentId===s.id&&d.type==='미수령');
+      const itemBtns = pends.map(p=>{
+        const avail=stock[p.item]?.[p.size]||0;
+        return avail>0
+          ?'<button class="btn bs btn-xs" style="margin:2px" onclick="receivePendingItem(\''+p.id+'\'  ,\''+s.name+'\')">✓ '+p.item+' '+p.size+'</button>'
+          :'<span class="badge bwarn" style="margin:2px">'+p.item+' '+p.size+'(재고없음)</span>';
+      }).join('');
+      return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' 📝':'')+
+        '</td>'+examCell(s)+'<td>'+(s.course||'—')+'</td>'+
+        '<td style="text-align:left">'+itemBtns+'</td>'+
+        '<td style="display:flex;gap:4px;flex-wrap:wrap">'+
+        '<button class="btn bs btn-xs" onclick="convertPendingToDispatch(\''+s.id+'\')">전체수령</button>'+
+        '<button class="btn bo btn-xs" '+goDispatch(s.name)+'>조회</button>'+
+        (isAdmin()?'<button class="btn bo btn-xs" onclick="cancelPending(\''+s.id+'\')">취소</button>':'')+
+        wBtn(s)+'</td></tr>';
+    }).join('');
+    bodyHtml = missingSearchBar()+(filtered.length===0
+      ?'<div class="notice">'+(missingSearch?'검색 결과 없음':'재고부족 미수령이 없습니다. ✅')+'</div>'
+      :'<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList(\'shortage\')">📥 엑셀</button></div><div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>재고부족항목</th><th>액션</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
 
   } else {
     const filtered = filterBySearch(excStudents);
-    bodyHtml = missingSearchBar() + (filtered.length === 0 ? '<div class="notice">'+(missingSearch?'검색 결과 없음':'예외처리된 학생이 없습니다.')+'</div>' :
-      '<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList('exception')">📥 엑셀</button></div>'+
-      '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>예외처리내용</th><th>액션</th></tr></thead><tbody>'+
-      filtered.map(s=>{
-        const reasons=s.exceptionReasons||{};
-        const excStr=Object.entries(s.exceptions||{}).filter(([,v])=>v>0).map(([k,v])=>{
-          const r=reasons[k]||'';
-          return '<span class="tip-wrap exc-reason-badge">'+k.replace('하의_total','하의')+' '+v+'개'+(r?'<span class="tip-box">사유: '+r+'</span>':'')+'</span>';
-        }).join(' ');
-        return '<tr><td class="tleft"><strong>'+s.name+'</strong></td>'+
-          examCell(s)+'<td>'+(s.course||'—')+'</td>'+
-          '<td style="text-align:left">'+excStr+'</td>'+
-          '<td>'+(isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(''+s.id+'')">수정</button>':'—')+'</td></tr>';
-      }).join('')+'</tbody></table></div>');
+    let rows = filtered.map(s => {
+      const reasons=s.exceptionReasons||{};
+      const excStr=Object.entries(s.exceptions||{}).filter(([,v])=>v>0).map(([k,v])=>{
+        const r=reasons[k]||'';
+        return '<span class="tip-wrap exc-reason-badge">'+k.replace('하의_total','하의')+' '+v+'개'+(r?'<span class="tip-box">사유: '+r+'</span>':'')+'</span>';
+      }).join(' ');
+      return '<tr><td class="tleft"><strong>'+s.name+'</strong></td>'+
+        examCell(s)+'<td>'+(s.course||'—')+'</td>'+
+        '<td style="text-align:left">'+excStr+'</td>'+
+        '<td>'+(isAdmin()?'<button class="btn bo btn-xs" onclick="openExceptionModal(\''+s.id+'\')">수정</button>':'—')+'</td></tr>';
+    }).join('');
+    bodyHtml = missingSearchBar()+(filtered.length===0
+      ?'<div class="notice">'+(missingSearch?'검색 결과 없음':'예외처리된 학생이 없습니다.')+'</div>'
+      :'<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList(\'exception\')">📥 엑셀</button></div><div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>예외처리내용</th><th>액션</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
   }
-
   el.innerHTML = `
     <div class="ph"><div class="pt">⚠️ 미수령 관리</div><div class="ps">미수령 학생 현황 및 예외처리</div></div>
     <div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:12px">
