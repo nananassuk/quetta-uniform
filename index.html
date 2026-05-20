@@ -1093,9 +1093,10 @@ function openReturnModal(dispId) {
   if (!d) return;
   G.rmDispatch = d;
   const sizes = G.cfg.items[d.item]?.sizes || [];
+  const maxQty = d.qty || 1;
   document.getElementById('rm-body').innerHTML = `
     <div style="background:#f8fafc;border-radius:9px;padding:12px;margin-bottom:14px;font-size:12px">
-      <div><strong>${d.item}</strong> ${d.size} × ${d.qty||1}개</div>
+      <div><strong>${d.item}</strong> ${d.size} × ${maxQty}개</div>
       <div style="color:var(--muted);margin-top:2px">학생: ${d.studentName} / ${d.createdAt?.toDate?.()?.toLocaleDateString?.('ko-KR')||'—'}</div>
     </div>
     <div class="fg" style="margin-bottom:12px">
@@ -1104,6 +1105,14 @@ function openReturnModal(dispId) {
         <option value="반품">반품 (재고로 복귀)</option>
         <option value="교환">교환</option>
       </select>
+    </div>
+    <div class="fg" style="margin-bottom:12px">
+      <label>수량 <span style="color:var(--muted);font-size:11px">(최대 ${maxQty}개)</span></label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" id="rm_qty" value="${maxQty}" min="1" max="${maxQty}"
+          style="width:80px;padding:8px;border:2px solid var(--bdr);border-radius:8px;text-align:center;font-family:var(--font);font-size:14px;font-weight:700;outline:none">
+        <span style="font-size:12px;color:var(--muted)">/ ${maxQty}개</span>
+      </div>
     </div>
     <div id="rm_exchange" style="display:none">
       <div class="fg" style="margin-bottom:10px">
@@ -1133,32 +1142,32 @@ async function confirmReturn() {
   if (!d) return;
   const type = document.getElementById('rm_type').value;
   const note = document.getElementById('rm_note').value;
+  const qty  = Math.min(parseInt(document.getElementById('rm_qty')?.value)||1, d.qty||1);
+  if (qty < 1) { showToast('수량을 1개 이상 입력해주세요.', 'w'); return; }
   try {
     if (type === '반품') {
       await addDoc('dispatches', {
         studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
-        item: d.item, size: d.size, qty: d.qty||1, type: '반품', note, refId: d.id,
+        item: d.item, size: d.size, qty, type: '반품', note, refId: d.id,
         createdBy: G.role, deleted: false
       });
     } else {
       const excReason = document.getElementById('rm_exc_reason').value;
       const newSize   = document.getElementById('rm_new_size').value;
-      // 반납 기록
       await addDoc('dispatches', {
         studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
-        item: d.item, size: d.size, qty: d.qty||1, type: '교환반납', exchangeType: excReason,
+        item: d.item, size: d.size, qty, type: '교환반납', exchangeType: excReason,
         note, refId: d.id, createdBy: G.role, deleted: false
       });
-      // 교환출고 기록
       await addDoc('dispatches', {
         studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
-        item: d.item, size: newSize, qty: d.qty||1, type: '교환출고', exchangeType: excReason,
+        item: d.item, size: newSize, qty, type: '교환출고', exchangeType: excReason,
         note, refId: d.id, createdBy: G.role, deleted: false
       });
     }
     await loadAll();
     closeModal('returnModal');
-    showToast('처리 완료', 's');
+    showToast(`${qty}개 ${type} 처리 완료`, 's');
     G.dispatchSearch = d.studentName;
     G._dispatchStudentId = d.studentId;
     refreshStudentCard(d.studentId);
@@ -1168,27 +1177,53 @@ async function confirmReturn() {
 /* ═══════════════════════════════════════════════
    출고 삭제
    ═══════════════════════════════════════════════ */
-async function delDispatch(id) {
+async function delDispatch(id, studentId) {
   const d = G.dispatches.find(x => x.id === id);
-  const typeLabel = d?.type === '출고' ? '출고취소' : d?.type === '미수령' ? '미수령취소' : '삭제';
-  const msg = d?.type === '출고'
-    ? `⚠ ${d.studentName} — ${d.item} ${d.size} 출고를 취소하시겠습니까?\n취소하면 재고가 즉시 복원됩니다.`
+  if (!d) return;
+  const maxQty   = d.qty || 1;
+  const targetId = studentId || d.studentId || G._dispatchStudentId;
+  const typeLabel = d.type === '출고' ? '출고취소' : d.type === '미수령' ? '미수령취소' : '삭제';
+
+  if (maxQty > 1 && (d.type === '출고' || d.type === '교환출고')) {
+    const input = prompt(d.item + ' ' + d.size + ' 출고취소\n취소할 수량을 입력하세요 (1~' + maxQty + '개)', maxQty);
+    if (input === null) return;
+    const qty = parseInt(input);
+    if (isNaN(qty) || qty < 1 || qty > maxQty) { showToast('1~' + maxQty + ' 사이의 수량을 입력해주세요.', 'w'); return; }
+    if (!confirm(d.studentName + ' — ' + d.item + ' ' + d.size + ' ' + qty + '개 출고취소하시겠습니까?')) return;
+    try {
+      if (qty === maxQty) {
+        await updateDoc('dispatches', id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      } else {
+        await updateDoc('dispatches', id, { qty: maxQty - qty });
+        await addDoc('dispatches', {
+          studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
+          item: d.item, size: d.size, qty: qty, type: '반품', note: '출고취소(부분)',
+          refId: id, createdBy: G.role, deleted: false
+        });
+      }
+      await loadAll();
+      showToast(qty + '개 출고취소 완료 — 재고 복원됨', 's');
+      if (G.activeTab === 'dispatch') { G._dispatchStudentId = targetId; refreshStudentCard(targetId); }
+      if (G.activeTab === 'missing') renderMissing();
+    } catch(e) { showToast('오류: ' + e.message, 'e'); }
+    return;
+  }
+
+  const msg = d.type === '출고'
+    ? '⚠ ' + d.studentName + ' — ' + d.item + ' ' + d.size + ' 출고를 취소하시겠습니까?\n취소하면 재고가 즉시 복원됩니다.'
     : '이 기록을 삭제하시겠습니까? 재고에 즉시 반영됩니다.';
   if (!confirm(msg)) return;
-  // 학생 ID 저장 (이름 대신 ID로 복원)
-  const targetStudentId = d?.studentId || G._dispatchStudentId;
-  const currentSearch   = d?.studentName || G.dispatchSearch || '';
   try {
     await updateDoc('dispatches', id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
     await loadAll();
-    showToast(`${typeLabel} 완료 — 재고 복원됨`, 's');
+    showToast(typeLabel + ' 완료 — 재고 복원됨', 's');
     if (G.activeTab === 'dispatch') {
-      G.dispatchSearch = currentSearch;
-      G._dispatchStudentId = targetStudentId;
-      refreshStudentCard(targetStudentId || currentSearch);
+      G.dispatchSearch = d.studentName || G.dispatchSearch;
+      G._dispatchStudentId = targetId;
+      refreshStudentCard(targetId);
     }
     if (G.activeTab === 'missing') renderMissing();
-  } catch(e) { showToast('오류: '+e.message,'e'); }
+  } catch(e) { showToast('오류: ' + e.message, 'e'); }
 }
 
 /* ═══════════════════════════════════════════════
