@@ -617,34 +617,61 @@ function renderVendorView() {
   const latestMap = {};
   G.stockChecks.sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0));
   G.stockChecks.forEach(c => { const k=`${c.item}_${c.size}`; if (!latestMap[k]) latestMap[k]=c; });
-  const latestWeek = G.stockChecks[0]?.weekId || '—';
+  const latestCheck = G.stockChecks[0];
+  const latestLabel = latestCheck?.checkDate
+    ? `${latestCheck.checkDate} ${String(latestCheck.checkHour||0).padStart(2,'0')}시`
+    : (latestCheck?.weekId || '—');
 
   let seasonBlocks = '';
   ['동복','하복'].forEach(season => {
-    const items = Object.entries(G.cfg.items).filter(([,v]) => v.season === season);
+    const items = getItemsBySeasonOrdered(season);
     let rows = '';
-    items.forEach(([item, cfg]) => {
+    items.forEach(item => {
+      const cfg = G.cfg.items[item];
+      if (!cfg) return;
       cfg.sizes.forEach((sz, si) => {
-        const inQty  = G.stockIn?.[item]?.[sz] || 0;
-        const actual = latestMap[`${item}_${sz}`]?.actual;
-        // 차이 = 입고 - 실재고 (즉, 출고된 것으로 계산)
-        const diff   = actual !== undefined ? inQty - actual : null;
+        const inQty   = G.stockIn?.[item]?.[sz] || 0;
+        const actual  = latestMap[`${item}_${sz}`]?.actual;
+        const sysStock = (stock[item]?.[sz] || 0); // 시스템재고 (출고 반영)
+        const diff    = actual !== undefined ? inQty - actual : null;
+
+        // 차이가 + → 시스템재고 표시 (출고가 더 많이 됐을 가능성)
+        // 차이가 - → 실재고 표시 (실제로 더 적게 있음)
+        // 실재고 없으면 시스템재고 표시
+        let displayQty, displayLabel, displayColor;
+        if (actual === undefined) {
+          displayQty = sysStock;
+          displayLabel = '시스템';
+          displayColor = 'var(--accent)';
+        } else if (diff !== null && diff < 0) {
+          // 실재고가 더 적음 → 실재고 표시
+          displayQty = actual;
+          displayLabel = '실재고';
+          displayColor = 'var(--err)';
+        } else {
+          // 차이 없거나 + → 시스템재고 표시
+          displayQty = sysStock;
+          displayLabel = '시스템';
+          displayColor = 'var(--ok)';
+        }
+
+        const defQty = defect[item]?.[sz] || 0;
         rows += `<tr class="${si===0?'gc':''}">
           ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left;font-weight:700">${item}</td>`:''}
           <td>${sz}</td>
           <td style="text-align:center;font-weight:700;color:var(--accent)">${inQty}</td>
-          <td style="text-align:center;font-weight:700">${actual !== undefined ? actual : '—'}</td>
-          <td style="text-align:center;font-weight:700;color:${diff===null?'#cbd5e1':diff>0?'var(--ok)':diff<0?'var(--err)':'var(--muted)'}">${diff === null ? '—' : diff > 0 ? `+${diff}` : diff}</td>
-          <td style="text-align:center;color:var(--err);font-weight:700">${defect[item]?.[sz] > 0 ? defect[item][sz] : '—'}</td>
+          <td style="text-align:center;font-weight:700;color:${displayColor}">${displayQty}
+            <span style="font-size:9px;color:var(--muted);font-weight:400;display:block">${displayLabel}</span>
+          </td>
+          <td style="text-align:center;color:var(--err);font-weight:700">${defQty > 0 ? defQty : '—'}</td>
         </tr>`;
       });
     });
-    const sizes = items[0]?.[1]?.sizes || [];
     seasonBlocks += `
       <div class="isec">${season === '동복' ? '🧥' : '👕'} ${season}</div>
       <div class="tw" style="margin-bottom:16px">
         <table class="tb">
-          <thead><tr><th>품목</th><th>사이즈</th><th>입고수량</th><th>실재고</th><th>출고 (차이)</th><th>불량</th></tr></thead>
+          <thead><tr><th>품목</th><th>사이즈</th><th>입고수량</th><th>현재고<br><span style="font-size:10px;font-weight:400">차이+ → 시스템재고 | 차이- → 실재고</span></th><th>불량</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>`;
@@ -653,9 +680,9 @@ function renderVendorView() {
   document.getElementById('tab-dashboard').innerHTML = `
     <div class="ph">
       <div class="pt">📊 재고 현황</div>
-      <div class="ps">입고수량 · 실재고 · 출고 수량 현황 / 실재고 기준: <strong>${latestWeek}</strong></div>
+      <div class="ps">실재고 기준: <strong>${latestLabel}</strong></div>
     </div>
-    <div class="ibox">📌 입고수량 - 실재고 = 출고(차이) 기준으로 표시됩니다. 실재고는 가장 최근 체크 기준입니다.</div>
+    <div class="ibox">📌 현재고: 실재고가 시스템재고보다 <span style="color:var(--ok);font-weight:700">적거나 같으면 시스템재고</span>, <span style="color:var(--err);font-weight:700">더 적으면 실재고</span>를 표시합니다.</div>
     ${seasonBlocks}`;
 }
 
