@@ -578,7 +578,7 @@ function getItemsBySeasonOrdered(season) {
   return [...ordered.filter(i => fromCfg.includes(i)), ...fromCfg.filter(i => !ordered.includes(i))];
 }
 function applyRoleNav() {
-  const vendorHide    = ['dispatch','missing','students','settings'];
+  const vendorHide    = ['dispatch','missing','students','settings','stock'];
   const assistantHide = ['students','settings'];
   if (G.role === 'vendor')    vendorHide.forEach(t    => { const el=document.getElementById(`nav-${t}`); if(el) el.style.display='none'; });
   if (G.role === 'assistant') assistantHide.forEach(t => { const el=document.getElementById(`nav-${t}`); if(el) el.style.display='none'; });
@@ -613,7 +613,6 @@ function renderTab(t) {
    ═══════════════════════════════════════════════ */
 function renderVendorView() {
   const { stock, defect } = calcStock();
-  // 최신 실재고 맵
   const latestMap = {};
   G.stockChecks.sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0));
   G.stockChecks.forEach(c => { const k=`${c.item}_${c.size}`; if (!latestMap[k]) latestMap[k]=c; });
@@ -632,36 +631,26 @@ function renderVendorView() {
       cfg.sizes.forEach((sz, si) => {
         const inQty   = G.stockIn?.[item]?.[sz] || 0;
         const actual  = latestMap[`${item}_${sz}`]?.actual;
-        const sysStock = (stock[item]?.[sz] || 0); // 시스템재고 (출고 반영)
+        const sysStock = stock[item]?.[sz] || 0;
+        const defQty  = defect[item]?.[sz] || 0;
         const diff    = actual !== undefined ? inQty - actual : null;
 
-        // 차이가 + → 시스템재고 표시 (출고가 더 많이 됐을 가능성)
-        // 차이가 - → 실재고 표시 (실제로 더 적게 있음)
-        // 실재고 없으면 시스템재고 표시
-        let displayQty, displayLabel, displayColor;
-        if (actual === undefined) {
-          displayQty = sysStock;
-          displayLabel = '시스템';
-          displayColor = 'var(--accent)';
-        } else if (diff !== null && diff < 0) {
-          // 실재고가 더 적음 → 실재고 표시
-          displayQty = actual;
-          displayLabel = '실재고';
-          displayColor = 'var(--err)';
-        } else {
-          // 차이 없거나 + → 시스템재고 표시
-          displayQty = sysStock;
-          displayLabel = '시스템';
-          displayColor = 'var(--ok)';
-        }
+        // 현재고: 차이- → 실재고, 그 외 → 시스템재고
+        let curStock, curColor;
+        if (actual === undefined)           { curStock = sysStock; curColor = 'var(--accent)'; }
+        else if (diff !== null && diff < 0) { curStock = actual;   curColor = 'var(--err)'; }
+        else                               { curStock = sysStock; curColor = 'var(--ok)'; }
 
-        const defQty = defect[item]?.[sz] || 0;
+        // 출고 = 입고수량 - 현재고 - 불량
+        const dispatched = inQty - curStock - defQty;
+
         rows += `<tr class="${si===0?'gc':''}">
           ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left;font-weight:700">${item}</td>`:''}
           <td>${sz}</td>
           <td style="text-align:center;font-weight:700;color:var(--accent)">${inQty}</td>
-          <td style="text-align:center;font-weight:700;color:${displayColor}">${displayQty}</td>
-          <td style="text-align:center;color:var(--err);font-weight:700">${defQty > 0 ? defQty : '—'}</td>
+          <td style="text-align:center;font-weight:700;color:${curColor}">${curStock}</td>
+          <td style="text-align:center;font-weight:700;color:var(--err)">${defQty > 0 ? defQty : '—'}</td>
+          <td style="text-align:center;font-weight:700">${dispatched > 0 ? dispatched : '—'}</td>
         </tr>`;
       });
     });
@@ -669,7 +658,7 @@ function renderVendorView() {
       <div class="isec">${season === '동복' ? '🧥' : '👕'} ${season}</div>
       <div class="tw" style="margin-bottom:16px">
         <table class="tb">
-          <thead><tr><th>품목</th><th>사이즈</th><th>입고수량</th><th>현재고</th><th>불량</th></tr></thead>
+          <thead><tr><th>품목</th><th>사이즈</th><th>입고수량</th><th>현재고</th><th>불량</th><th>출고</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>`;
