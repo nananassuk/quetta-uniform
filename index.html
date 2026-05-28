@@ -660,9 +660,7 @@ function renderVendorView() {
           ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left;font-weight:700">${item}</td>`:''}
           <td>${sz}</td>
           <td style="text-align:center;font-weight:700;color:var(--accent)">${inQty}</td>
-          <td style="text-align:center;font-weight:700;color:${displayColor}">${displayQty}
-            <span style="font-size:9px;color:var(--muted);font-weight:400;display:block">${displayLabel}</span>
-          </td>
+          <td style="text-align:center;font-weight:700;color:${displayColor}">${displayQty}</td>
           <td style="text-align:center;color:var(--err);font-weight:700">${defQty > 0 ? defQty : '—'}</td>
         </tr>`;
       });
@@ -671,7 +669,7 @@ function renderVendorView() {
       <div class="isec">${season === '동복' ? '🧥' : '👕'} ${season}</div>
       <div class="tw" style="margin-bottom:16px">
         <table class="tb">
-          <thead><tr><th>품목</th><th>사이즈</th><th>입고수량</th><th>현재고<br><span style="font-size:10px;font-weight:400">차이+ → 시스템재고 | 차이- → 실재고</span></th><th>불량</th></tr></thead>
+          <thead><tr><th>품목</th><th>사이즈</th><th>입고수량</th><th>현재고</th><th>불량</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>`;
@@ -682,13 +680,16 @@ function renderVendorView() {
       <div class="pt">📊 재고 현황</div>
       <div class="ps">실재고 기준: <strong>${latestLabel}</strong></div>
     </div>
-    <div class="ibox">📌 현재고: 실재고가 시스템재고보다 <span style="color:var(--ok);font-weight:700">적거나 같으면 시스템재고</span>, <span style="color:var(--err);font-weight:700">더 적으면 실재고</span>를 표시합니다.</div>
     ${seasonBlocks}`;
 }
 
 function renderDashboard() {
   if (G.role === 'vendor') { renderVendorView(); return; }
   const { stock, defect } = calcStock();
+  // 업체노출 계산용 최신 실재고 맵
+  const latestCheckMap = {};
+  G.stockChecks.sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0));
+  G.stockChecks.forEach(c => { const k=`${c.item}_${c.size}`; if (!latestCheckMap[k]) latestCheckMap[k]=c; });
   const totalDispatches = G.dispatches.filter(d => d.type === '출고').length;
   const totalStudents = G.students.length;
   const missingCount = G.students.filter(s => getMissingItems(s).length > 0).length;
@@ -712,11 +713,26 @@ function renderDashboard() {
         return `<td${s<=0?' class="neg"':s<=5?' style="background:#fef3c7"':''}>${s}</td>`;
       }).join('');
       const defRow = sizes.map(sz => `<td>${defect[item]?.[sz] || 0}</td>`).join('');
+
+      // 업체 노출 수량 계산 (renderVendorView 동일 로직)
+      const vendorRow = sizes.map(sz => {
+        const actual  = latestCheckMap[`${item}_${sz}`]?.actual;
+        const sysStock = stock[item]?.[sz] || 0;
+        const inQty   = G.stockIn?.[item]?.[sz] || 0;
+        const diff    = actual !== undefined ? inQty - actual : null;
+        let displayQty, color;
+        if (actual === undefined)       { displayQty = sysStock; color = 'var(--accent)'; }
+        else if (diff !== null && diff < 0) { displayQty = actual;   color = 'var(--err)'; }
+        else                            { displayQty = sysStock; color = 'var(--ok)'; }
+        return `<td style="font-weight:700;color:${color};background:#f0fdf4">${displayQty}</td>`;
+      }).join('');
+
       itemRows += `
-        <tr class="gc"><td class="thd" rowspan="4" style="text-align:left">${item}</td><td class="thd">입고</td>${inRow}</tr>
+        <tr class="gc"><td class="thd" rowspan="5" style="text-align:left">${item}</td><td class="thd">입고</td>${inRow}</tr>
         <tr><td class="thd">출고</td>${outRow}</tr>
         <tr><td class="thd" style="color:var(--accent)">재고</td>${stRow}</tr>
-        <tr><td class="thd" style="color:var(--err)">불량</td>${defRow}</tr>`;
+        <tr><td class="thd" style="color:var(--err)">불량</td>${defRow}</tr>
+        <tr><td class="thd" style="background:#f0fdf4;color:#166534;font-size:11px">📢 업체노출</td>${vendorRow}</tr>`;
     });
     const sizes = items.length > 0 ? G.cfg.items[items[0]]?.sizes || [] : [];
     seasonBlocks += `
