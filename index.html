@@ -1630,14 +1630,18 @@ function renderStock() {
         });
       });
 
+      const selHour = G._stockInSelHour !== undefined ? G._stockInSelHour : new Date().getHours();
+      const hourOpts = Array.from({length:24},(_,i)=>
+        `<option value="${i}" ${i===selHour?'selected':''}>${String(i).padStart(2,'0')}시</option>`).join('');
+
       const dateOpts = allDates.map(d =>
         `<option value="${d}" ${d===selDate?'selected':''}>${d} (${dateSummary[d]||0}개)</option>`
       ).join('');
 
       bodyHtml = `
         <div class="ibox">
-          📥 <strong>날짜를 선택</strong>하면 해당 날짜의 기존 입고 수량이 불러와집니다.<br>
-          수량을 수정하고 저장하면 <strong>해당 날짜 이력이 덮어씌워집니다.</strong>
+          📥 <strong>날짜+시간을 선택</strong>하면 해당 시점의 기존 입고 수량이 불러와집니다.<br>
+          수량을 수정하고 저장하면 <strong>해당 날짜+시간 이력이 덮어씌워집니다.</strong>
         </div>
         <div class="fr" style="align-items:flex-end;gap:10px;margin-bottom:14px;flex-wrap:wrap">
           <div class="fg">
@@ -1645,6 +1649,13 @@ function renderStock() {
             <input type="date" id="stockInDate" value="${selDate}"
               onchange="G._stockInSelDate=this.value;selStockTab('input')"
               style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
+          </div>
+          <div class="fg">
+            <label>입고 시간 *</label>
+            <select id="stockInHour" onchange="G._stockInSelHour=parseInt(this.value);selStockTab('input')"
+              style="padding:9px 12px;border:2px solid var(--bdr);border-radius:9px;font-family:var(--font);font-size:13px;outline:none">
+              ${hourOpts}
+            </select>
           </div>
           <div class="fg">
             <label>기존 날짜 불러오기</label>
@@ -1665,7 +1676,7 @@ function renderStock() {
         </div>
         <div class="tw">
           <table class="tb">
-            <thead><tr><th>품목</th><th>사이즈</th><th>전체 누적 재고</th><th>${selDate} 입고수량</th></tr></thead>
+            <thead><tr><th>품목</th><th>사이즈</th><th>전체 누적 재고</th><th>${selDate} ${String(selHour).padStart(2,'0')}시 입고수량</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -1996,6 +2007,7 @@ async function confirmEditStockIn(id, item, size, oldQty) {
 
 async function saveStockIn() {
   const date = document.getElementById('stockInDate')?.value;
+  const hour = G._stockInSelHour !== undefined ? G._stockInSelHour : new Date().getHours();
   const note = document.getElementById('stockInNote')?.value.trim() || '';
   if (!date) { showToast('입고 일자를 선택해주세요.', 'w'); return; }
 
@@ -2006,23 +2018,20 @@ async function saveStockIn() {
     if (!cfg) return;
     cfg.sizes.forEach(sz => {
       const qty = parseInt(document.getElementById(`sin_${item}_${sz}`)?.value) || 0;
-      updates.push({ item, size: sz, qty, date, note });
+      updates.push({ item, size: sz, qty, date, hour, note });
     });
   });
 
   try {
     showToast('저장 중...', 'w');
-    // 해당 날짜의 기존 이력 삭제 후 새로 저장 (덮어쓰기)
+    // 같은 날짜의 모든 기존 이력 삭제 (hour 필드 유무 관계없이)
     const existing = G.stockInHistory.filter(h => h.date === date);
     const CHUNK = 400;
-
-    // 기존 삭제
     for (let i = 0; i < existing.length; i += CHUNK) {
       const batch = db.batch();
       existing.slice(i, i+CHUNK).forEach(h => batch.delete(db.collection('stock_in_history').doc(h.id)));
       await batch.commit();
     }
-
     // 새로 저장 (qty>0인 것만)
     const toSave = updates.filter(u => u.qty > 0);
     for (let i = 0; i < toSave.length; i += CHUNK) {
@@ -2034,10 +2043,10 @@ async function saveStockIn() {
       });
       await batch.commit();
     }
-
     await loadAll();
     G._stockInSelDate = date;
-    showToast(`${date} 입고 저장 완료`, 's');
+    G._stockInSelHour = hour;
+    showToast(`${date} ${String(hour).padStart(2,'0')}시 입고 저장 완료`, 's');
     renderStock();
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
@@ -2108,13 +2117,15 @@ function calcCheckSum(el) {
 function calcStockAtTime(targetDate, targetHour) {
   const cutoff = new Date(`${targetDate}T${String(targetHour).padStart(2,'0')}:59:59`);
 
-  // 입고: 해당 날짜 이전까지
+  // 입고: 해당 날짜+시간 이전까지 (hour 있으면 시간 비교, 없으면 날짜만)
   const stockIn = {};
   (G.stockInHistory || []).forEach(h => {
-    if (h.date && h.date <= targetDate) {
-      if (!stockIn[h.item]) stockIn[h.item] = {};
-      stockIn[h.item][h.size] = (stockIn[h.item][h.size]||0) + (h.qty||0);
-    }
+    if (!h.date) return;
+    const hHour = h.hour !== undefined ? h.hour : 0;
+    const inRange = h.date < targetDate || (h.date === targetDate && hHour <= targetHour);
+    if (!inRange) return;
+    if (!stockIn[h.item]) stockIn[h.item] = {};
+    stockIn[h.item][h.size] = (stockIn[h.item][h.size]||0) + (h.qty||0);
   });
 
   const stock = {}, defect = {};
@@ -2270,20 +2281,54 @@ async function saveStockCheck() {
 }
 
 function exportStockReport() {
-  const { stock, defect } = calcStock();
+  // 현재 체크 이력 탭에서 선택된 세션 데이터 사용
+  const sessKey = document.getElementById('histSessSel')?.value || '';
+  const sessChecks = G.stockChecks.filter(c => {
+    const k = c.checkDate ? c.checkDate+'_'+c.checkHour : (c.weekId||'');
+    return k === sessKey;
+  });
+  const firstCheck = sessChecks[0];
+  const sessSysAt = firstCheck?.checkDate
+    ? calcStockAtTime(firstCheck.checkDate, firstCheck.checkHour||23)
+    : calcStock();
+  const checkMap = {};
+  sessChecks.forEach(c => { checkMap[c.item+'_'+c.size] = c; });
+
   const rows = [];
-  Object.entries(G.cfg.items).forEach(([item, cfg]) => {
+  getItemsBySeasonOrdered('동복').concat(getItemsBySeasonOrdered('하복')).forEach(item => {
+    const cfg = G.cfg.items[item];
+    if (!cfg) return;
     cfg.sizes.forEach(sz => {
-      const sys = stock[item]?.[sz] || 0;
-      const def = defect[item]?.[sz] || 0;
-      const inc = G.stockIn?.[item]?.[sz] || 0;
-      rows.push({ '품목':item,'사이즈':sz,'입고수량':inc,'시스템재고':sys,'불량수량':def });
+      const chk = checkMap[item+'_'+sz];
+      const sysNormal = sessSysAt.stock[item]?.[sz] || 0;
+      const sysDef    = sessSysAt.defect[item]?.[sz] || 0;
+      const sysTotal  = sysNormal + sysDef;
+      const actual    = chk?.actual;
+      const diff      = actual !== undefined ? actual - sysTotal : '';
+      rows.push({
+        '품목': item,
+        '사이즈': sz,
+        '창고': chk?.창고 ?? '',
+        '교판실': chk?.교판실 ?? '',
+        '샘플': chk?.샘플 ?? '',
+        '불량(실재고)': chk?.불량 ?? '',
+        '실재고합계': actual ?? '',
+        '시스템재고': sysNormal,
+        '불량재고': sysDef || '',
+        '차이': diff,
+        '비고': chk?.note || '',
+      });
     });
   });
+
   const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [10,6,6,8,6,10,10,10,8,6,20].map(w=>({wch:w}));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '재고현황');
-  XLSX.writeFile(wb, `QUETTA_재고현황_${new Date().toLocaleDateString('ko-KR').replace(/\./g,'').replace(/ /g,'')}.xlsx`);
+  const label = firstCheck?.checkDate
+    ? firstCheck.checkDate+'_'+String(firstCheck.checkHour||0).padStart(2,'0')+'시'
+    : new Date().toLocaleDateString('ko-KR').replace(/\./g,'').replace(/ /g,'');
+  XLSX.utils.book_append_sheet(wb, ws, '실재고체크');
+  XLSX.writeFile(wb, `QUETTA_실재고_${label}.xlsx`);
 }
 
 /* ═══════════════════════════════════════════════
