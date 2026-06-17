@@ -490,12 +490,26 @@ function getStudentReceived(studentId) {
   const myDisp = _dispatchCache?.[studentId] || G.dispatches.filter(d => d.studentId === studentId);
   myDisp.forEach(d => {
     if (received[d.item] === undefined) return;
+    if (d.isExtraPurchase) return; // 추가구매는 수령 계산에서 제외
     if (d.type === '출고' || d.type === '교환출고') received[d.item] += d.qty || 1;
     if (d.type === '반품' || d.type === '반품입고') received[d.item] -= d.qty || 1;
-    // 불량입고, 미수령, 출고예약 → 학생 수령에 영향 없음
   });
   received['하의'] = (received['긴바지'] || 0) + (received['반바지'] || 0);
   return received;
+}
+
+// 초과수령 항목 반환 (추가구매 제외)
+function getOverReceivedItems(student) {
+  if (student.withdrawn) return [];
+  const received = getStudentReceived(student.id);
+  const required = getStudentRequired(student);
+  const over = [];
+  Object.keys(required).forEach(k => {
+    const req = required[k] || 0;
+    const got = k === '하의_total' ? (received['하의'] || 0) : (received[k] || 0);
+    if (req > 0 && got > req) over.push({ key: k, need: req, got });
+  });
+  return over;
 }
 
 function getStudentRequired(student) {
@@ -766,14 +780,25 @@ function renderDispatch(searchVal = '') {
         `<option value="${c}" ${G.cfg.defaults?.course===c?'selected':''}>${c}</option>`
       ).join('');
       resultHtml = `
-        <div style="background:#fff;border:2px solid var(--accent);border-radius:12px;padding:20px;max-width:460px;margin:0 auto">
+        <div style="background:#fff;border:2px solid var(--accent);border-radius:12px;padding:20px;max-width:480px;margin:0 auto">
           <div style="font-size:15px;font-weight:700;margin-bottom:6px">🔍 검색 결과 없음</div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:16px">"<strong>${searchVal}</strong>" 에 해당하는 학생이 없습니다.<br>신규 학생으로 바로 등록하시겠습니까?</div>
           <div style="display:flex;flex-direction:column;gap:10px">
             <div class="fr" style="flex-wrap:wrap;gap:8px;margin-bottom:0">
               <div class="fg"><label>이름 *</label><input type="text" id="quick_name" value="${searchVal.match(/[가-힣]/) ? searchVal : ''}" placeholder="홍길동" style="min-width:110px"></div>
-              <div class="fg"><label>수험번호</label><input type="text" id="quick_exam" value="${searchVal.match(/^\d+$/) ? searchVal : ''}" placeholder="3001" style="min-width:90px"></div>
-              <div class="fg"><label>학번</label><input type="text" id="quick_sno" placeholder="3001" style="min-width:90px"></div>
+              <div class="fg">
+                <label>학번 * <span style="font-size:10px;color:var(--muted)">(필수)</span></label>
+                <input type="text" id="quick_sno" placeholder="5001" style="min-width:90px"
+                  value="${searchVal.match(/^\d+$/) ? searchVal : ''}"
+                  oninput="const e=document.getElementById('quick_exam');if(!e.dataset.manual)e.value=this.value;">
+              </div>
+              <div class="fg">
+                <label>수험번호 <span style="font-size:10px;color:var(--muted)">(미입력시 학번과 동일)</span></label>
+                <input type="text" id="quick_exam" placeholder="자동입력"
+                  value="${searchVal.match(/^\d+$/) ? searchVal : ''}"
+                  style="min-width:110px"
+                  oninput="this.dataset.manual=this.value?'1':'';">
+              </div>
             </div>
             <div class="fr" style="flex-wrap:wrap;gap:8px;margin-bottom:0">
               <div class="fg"><label>시즌 *</label><select id="quick_season" style="min-width:100px"><option value="">선택</option>${seasonOpts}</select></div>
@@ -866,21 +891,31 @@ function refreshStudentCard(studentIdOrName) {
 /* 출고관리 빠른 학생 등록 후 출고 */
 async function quickRegisterAndDispatch() {
   const name   = document.getElementById('quick_name')?.value.trim();
-  const exam   = document.getElementById('quick_exam')?.value.trim();
   const sno    = document.getElementById('quick_sno')?.value.trim();
+  const examRaw = document.getElementById('quick_exam')?.value.trim();
+  const exam   = examRaw || sno; // 수험번호 미입력시 학번과 동일
   const season = document.getElementById('quick_season')?.value;
   const course = document.getElementById('quick_course')?.value;
+
   if (!name)   { showToast('이름을 입력해주세요.','w'); return; }
+  if (!sno)    { showToast('학번을 입력해주세요. (필수)','w'); return; }
   if (!season) { showToast('시즌을 선택해주세요.','w'); return; }
   if (!course) { showToast('과정을 선택해주세요.','w'); return; }
-  const dup = exam && G.students.find(s => s.examNo === exam);
-  if (dup) { showToast(`수험번호 ${exam}는 이미 등록된 학생입니다. (${dup.name})`,'w'); return; }
+
+  // 학번 중복 체크
+  const dupSno = G.students.find(s => s.studentNo === sno && String(s.season||'') === season);
+  if (dupSno) { showToast(`⚠ 학번 ${sno}는 ${season}년에 이미 등록된 학생입니다. (${dupSno.name})`,'w'); return; }
+
+  // 수험번호 중복 체크
+  const dupExam = exam && G.students.find(s => s.examNo === exam && String(s.season||'') === season);
+  if (dupExam) { showToast(`⚠ 수험번호 ${exam}는 ${season}년에 이미 등록된 학생입니다. (${dupExam.name})`,'w'); return; }
+
   try {
-    const id = await addDoc('students', { name, examNo:exam||'', studentNo:sno||'', course, season, exceptions:{}, memo:'' });
+    const id = await addDoc('students', { name, examNo: exam||'', studentNo: sno, course, season, exceptions:{}, memo:'' });
     await loadAll();
     showToast(`${name} 등록 완료! 출고 화면으로 이동합니다.`,'s');
-    // 바로 출고 모달 열기
     setTimeout(() => {
+      G._dispatchStudentId = id;
       renderDispatch(name);
       setTimeout(() => openDispatchModal(id), 400);
     }, 200);
@@ -923,7 +958,7 @@ function buildStudentCard(s) {
         rowsHtml = rows.map(d => {
           const dt = d.createdAt?.toDate?.() ? d.createdAt.toDate().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
           let typeBadge;
-          if (d.type==='출고') typeBadge=`<span class="badge bok">출고</span>`;
+          if (d.type==='출고') typeBadge=`<span class="badge bok">출고</span>${d.isExtraPurchase?'<span class="badge bpurple" style="font-size:10px;margin-left:3px">🛍추가구매</span>':''}`;
           else if (d.type==='반품') typeBadge=`<span class="badge berr">반품</span>`;
           else if (d.type==='교환출고') typeBadge=`<span class="badge binfo">교환출고</span>`;
           else if (d.type==='교환반납') typeBadge=`<span class="badge bneu">교환반납(${d.exchangeType})</span>`;
@@ -999,7 +1034,6 @@ function buildStudentCard(s) {
           ${isAdmin() ? `<button class="btn bo btn-sm" onclick="openMemoModal('${s.id}')">📝 메모</button>` : ''}
           ${isAdmin() && !s.withdrawn ? `<button class="btn bw btn-sm" onclick="openWithdrawModal('${s.id}')">🚪 퇴소</button>` : ''}
           ${isAdmin() && s.withdrawn  ? `<button class="btn bo btn-sm" onclick="unmarkWithdrawn('${s.id}')">↩ 재원복귀</button>` : ''}
-          ${isAdmin() && !s.withdrawn && s.isTemporaryException ? `<button class="btn bo btn-sm" onclick="clearTempException('${s.id}')">📋 일시예외 해제</button>` : ''}
           ${isAdmin() ? `<button class="btn be btn-sm" onclick="deleteStudent('${s.id}')">🗑 학생삭제</button>` : ''}
         </div>
       </div>
@@ -1059,6 +1093,12 @@ function openDispatchModal(studentId) {
     <div class="fg" style="margin-top:12px">
       <label>비고 (선택)</label>
       <input type="text" id="dm_note" placeholder="특이사항 입력...">
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="dm_extra_purchase" style="width:16px;height:16px;cursor:pointer">
+      <label for="dm_extra_purchase" style="cursor:pointer;font-size:13px;font-weight:600;color:#7c3aed">
+        🛍 추가구매 (필요 수량 초과 출고 - 수령 계산에서 제외됨)
+      </label>
     </div>`;
 
   openModal('dispatchModal');
@@ -1075,6 +1115,7 @@ function updateDmStock(item, sel) {
 async function confirmDispatch() {
   if (!G.dmStudent) return;
   const note = document.getElementById('dm_note').value;
+  const isExtraPurchase = document.getElementById('dm_extra_purchase')?.checked || false;
   const items = Object.keys(G.cfg.items);
   const { stock } = calcStock();
   const records = [];
@@ -1093,7 +1134,7 @@ async function confirmDispatch() {
         showToast(`${item} ${sz} 재고 부족! (현재 ${avail}개)`, 'e');
         return;
       }
-      records.push({ type: '출고', item, size: sz, qty });
+      records.push({ type: '출고', item, size: sz, qty, isExtraPurchase });
     }
   }
 
@@ -1309,6 +1350,12 @@ function renderMissing() {
 
   const excStudents = G.students.filter(s => s.exceptions && Object.values(s.exceptions).some(v=>v>0));
 
+  // 초과수령 학생 (추가구매 제외하고 필요 수량보다 많이 받은 학생)
+  const overStudents = G.students.filter(s => {
+    if (s.withdrawn || s.isTemporaryException) return false;
+    return getOverReceivedItems(s).length > 0;
+  });
+
   function examCell(s) {
     return `<td><span class="exam-click" onclick="openMissingMemoModal('${s.id}')" title="클릭 시 메모">${s.examNo||'—'}</span></td>`;
   }
@@ -1398,15 +1445,32 @@ function renderMissing() {
     bodyHtml = missingSearchBar()+(filtered.length===0
       ?'<div class="notice">'+(missingSearch?'검색 결과 없음':'예외처리된 학생이 없습니다.')+'</div>'
       :'<div class="sec-hd"><span style="font-size:12px;color:var(--muted)">'+filtered.length+'명</span><button class="btn bo btn-sm" onclick="exportMissingList(\'exception\')">📥 엑셀</button></div><div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호(클릭=메모)</th><th>과정</th><th>예외처리내용</th><th>액션</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
+
+  } else if (missingTabSel === 'over') {
+    const filtered = filterBySearch(overStudents);
+    let rows = filtered.map(s => {
+      const over = getOverReceivedItems(s);
+      const overStr = over.map(o => '<span class="badge berr">'+o.key.replace('하의_total','하의')+' '+o.got+'개 (필요 '+o.need+'개)</span>').join(' ');
+      return '<tr><td class="tleft"><strong>'+s.name+'</strong>'+(s.memo?' 📝':'')+
+        '</td>'+examCell(s)+'<td>'+(s.studentNo||'—')+'</td><td>'+(s.course||'—')+'</td>'+
+        '<td style="text-align:left">'+overStr+'</td>'+
+        '<td><button class="btn bo btn-xs" '+goDispatch(s.name)+'>출고조회</button></td></tr>';
+    }).join('');
+    bodyHtml = missingSearchBar()+(filtered.length===0
+      ?'<div class="notice">'+(missingSearch?'검색 결과 없음':'초과수령 학생이 없습니다. ✅')+'</div>'
+      :'<div class="ibox">⚠ 필요 수량보다 많이 출고된 학생입니다. 잘못 입력됐을 수 있으니 확인해주세요.<br>🛍 <strong>추가구매</strong>로 처리된 출고는 이 목록에서 제외됩니다.</div>'+
+       '<div class="sec-hd"><span style="font-size:12px;color:#dc2626;font-weight:700">'+filtered.length+'명</span></div>'+
+       '<div class="tw"><table class="tb"><thead><tr><th>이름</th><th>수험번호</th><th>학번</th><th>과정</th><th>초과수령 항목</th><th>출고조회</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
   }
   el.innerHTML = `
     <div class="ph"><div class="pt">⚠️ 미수령 관리</div><div class="ps">미수령 학생 현황 및 예외처리</div></div>
-    <div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:12px">
+    <div class="stat-grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:12px">
       <div class="sc"><div class="sc-l">미방문</div><div class="sc-v" style="color:var(--err)">${unvisitedStudents.length}</div><div class="sc-s">명</div></div>
       <div class="sc"><div class="sc-l">부분수령</div><div class="sc-v" style="color:#7c3aed">${partialStudents.length}</div><div class="sc-s">명</div></div>
       <div class="sc"><div class="sc-l">재고부족</div><div class="sc-v" style="color:var(--warn)">${stockShortStudents.length}</div><div class="sc-s">명</div></div>
       <div class="sc"><div class="sc-l">예외처리</div><div class="sc-v" style="color:var(--accent)">${excStudents.length}</div><div class="sc-s">명</div></div>
       <div class="sc"><div class="sc-l">퇴소</div><div class="sc-v" style="color:var(--warn)">${G.students.filter(s=>s.withdrawn&&!s.isTemporaryException).length}</div><div class="sc-s">명</div></div>
+      <div class="sc"><div class="sc-l">초과수령</div><div class="sc-v" style="color:#dc2626">${overStudents.length}</div><div class="sc-s">명</div></div>
     </div>
     <div class="card">
       <div class="ttabs">
@@ -1414,6 +1478,7 @@ function renderMissing() {
         <button class="ttab ${missingTabSel==='partial'?'active':''}"   onclick="selMissingTab('partial')">부분수령 (${partialStudents.length})</button>
         <button class="ttab ${missingTabSel==='shortage'?'active':''}"  onclick="selMissingTab('shortage')">재고부족 (${stockShortStudents.length})</button>
         <button class="ttab ${missingTabSel==='exception'?'active':''}" onclick="selMissingTab('exception')">예외처리 (${excStudents.length})</button>
+        <button class="ttab ${missingTabSel==='over'?'active':''}" onclick="selMissingTab('over')" style="${overStudents.length>0?'color:#dc2626;font-weight:700':''}">⚠ 초과수령 (${overStudents.length})</button>
       </div>
       ${bodyHtml}
     </div>`;
@@ -2643,13 +2708,11 @@ function renderStudents() {
             <option value="미수령" ${filterStatus==='미수령'?'selected':''}>미수령</option>
             <option value="완료" ${filterStatus==='완료'?'selected':''}>완료</option>
             <option value="퇴소" ${filterStatus==='퇴소'?'selected':''}>퇴소</option>
-            <option value="일시예외해제필요" ${filterStatus==='일시예외해제필요'?'selected':''}>📋 일시예외 해제 필요 ${needClearCount>0?`(${needClearCount}명)`:''}</option>
           </select>
           <input type="text" id="stuSearch" placeholder="🔍 이름·수험번호·학번 검색" oninput="studentListPage=0;renderStudents()"
             style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none;min-width:200px"
             value="${document.getElementById('stuSearch')?.value||''}">
           <span style="font-size:12px;color:var(--muted)">${students.length}명</span>
-          ${needClearCount > 0 && filterStatus !== '일시예외해제필요' ? `<span style="background:#fde8ff;color:#7c3aed;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer" onclick="document.getElementById('stuFilterStatus').value='일시예외해제필요';studentListPage=0;renderStudents()">📋 일시예외 해제 필요 ${needClearCount}명 →</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn bo btn-sm" onclick="exportStudentList()">📥 명단 다운로드</button>
@@ -3112,15 +3175,6 @@ async function confirmWithdraw(studentId) {
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
 async function markWithdrawn(studentId) { openWithdrawModal(studentId); }
-async function clearTempException(studentId) {
-  if (!confirm('일시예외처리를 해제하고 재원 상태로 변경하시겠습니까?')) return;
-  try {
-    await updateDoc('students', studentId, { isTemporaryException: false, withdrawn: false, withdrawnReason: '', withdrawnDate: '' });
-    await loadAll();
-    showToast('일시예외처리 해제 완료', 's');
-    refreshStudentCard(studentId);
-  } catch(e) { showToast('오류: '+e.message,'e'); }
-}
 
 async function unmarkWithdrawn(studentId) {
   if (!confirm('퇴소를 취소하고 재원으로 복귀하시겠습니까?')) return;
