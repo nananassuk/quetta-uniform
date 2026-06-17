@@ -1239,27 +1239,94 @@ async function confirmReturn() {
   const note = document.getElementById('rm_note').value;
   const qty  = Math.min(parseInt(document.getElementById('rm_qty')?.value)||1, d.qty||1);
   if (qty < 1) { showToast('수량을 1개 이상 입력해주세요.', 'w'); return; }
+
+  const originalQty = d.qty || 1;
+  const remaining   = originalQty - qty;
+
   try {
     if (type === '반품') {
+      // 원본 삭제
+      await updateDoc('dispatches', d.id, { deleted: true, deletedAt: firebase.firestore.Timestamp.now() });
+
+      // 반품된 수량 → 새 출고 레코드 (반품됨으로 표시될 것)
+      const returnedDispatchId = await addDoc('dispatches', {
+        studentId: d.studentId, studentName: d.studentName,
+        examNo: d.examNo, course: d.course,
+        item: d.item, size: d.size, qty,
+        type: '출고', note: d.note || '',
+        isExtraPurchase: d.isExtraPurchase || false,
+        createdAt: d.createdAt, // 원본 일시 유지
+        createdBy: d.createdBy || G.role, deleted: false
+      });
+
+      // 반품 이력 생성 (위 레코드와 연결)
       await addDoc('dispatches', {
-        studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
-        item: d.item, size: d.size, qty, type: '반품', note, refId: d.id,
+        studentId: d.studentId, studentName: d.studentName,
+        examNo: d.examNo, course: d.course,
+        item: d.item, size: d.size, qty,
+        type: '반품', note, refId: returnedDispatchId,
         createdBy: G.role, deleted: false
       });
+
+      // 남은 수량이 있으면 별도 출고 레코드 생성
+      if (remaining > 0) {
+        await addDoc('dispatches', {
+          studentId: d.studentId, studentName: d.studentName,
+          examNo: d.examNo, course: d.course,
+          item: d.item, size: d.size, qty: remaining,
+          type: '출고', note: d.note || '',
+          isExtraPurchase: d.isExtraPurchase || false,
+          createdAt: d.createdAt, // 원본 일시 유지
+          createdBy: d.createdBy || G.role, deleted: false
+        });
+      }
+
     } else {
+      // 교환 처리 (기존 방식 유지)
       const excReason = document.getElementById('rm_exc_reason').value;
       const newSize   = document.getElementById('rm_new_size').value;
-      await addDoc('dispatches', {
-        studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
-        item: d.item, size: d.size, qty, type: '교환반납', exchangeType: excReason,
-        note, refId: d.id, createdBy: G.role, deleted: false
+
+      // 원본 삭제
+      await updateDoc('dispatches', d.id, { deleted: true, deletedAt: firebase.firestore.Timestamp.now() });
+
+      // 교환 반납 레코드
+      const returnedId = await addDoc('dispatches', {
+        studentId: d.studentId, studentName: d.studentName,
+        examNo: d.examNo, course: d.course,
+        item: d.item, size: d.size, qty, type: '출고',
+        note: d.note || '', createdAt: d.createdAt,
+        createdBy: d.createdBy || G.role, deleted: false
       });
       await addDoc('dispatches', {
-        studentId: d.studentId, studentName: d.studentName, examNo: d.examNo, course: d.course,
-        item: d.item, size: newSize, qty, type: '교환출고', exchangeType: excReason,
-        note, refId: d.id, createdBy: G.role, deleted: false
+        studentId: d.studentId, studentName: d.studentName,
+        examNo: d.examNo, course: d.course,
+        item: d.item, size: d.size, qty, type: '교환반납',
+        exchangeType: excReason, note, refId: returnedId,
+        createdBy: G.role, deleted: false
       });
+
+      // 새 사이즈로 교환 출고
+      await addDoc('dispatches', {
+        studentId: d.studentId, studentName: d.studentName,
+        examNo: d.examNo, course: d.course,
+        item: d.item, size: newSize, qty, type: '교환출고',
+        exchangeType: excReason, note, refId: returnedId,
+        createdBy: G.role, deleted: false
+      });
+
+      // 남은 수량 레코드
+      if (remaining > 0) {
+        await addDoc('dispatches', {
+          studentId: d.studentId, studentName: d.studentName,
+          examNo: d.examNo, course: d.course,
+          item: d.item, size: d.size, qty: remaining,
+          type: '출고', note: d.note || '',
+          createdAt: d.createdAt,
+          createdBy: d.createdBy || G.role, deleted: false
+        });
+      }
     }
+
     await loadAll();
     closeModal('returnModal');
     showToast(`${qty}개 ${type} 처리 완료`, 's');
