@@ -999,6 +999,7 @@ function buildStudentCard(s) {
           ${isAdmin() ? `<button class="btn bo btn-sm" onclick="openMemoModal('${s.id}')">📝 메모</button>` : ''}
           ${isAdmin() && !s.withdrawn ? `<button class="btn bw btn-sm" onclick="openWithdrawModal('${s.id}')">🚪 퇴소</button>` : ''}
           ${isAdmin() && s.withdrawn  ? `<button class="btn bo btn-sm" onclick="unmarkWithdrawn('${s.id}')">↩ 재원복귀</button>` : ''}
+          ${isAdmin() ? `<button class="btn be btn-sm" onclick="deleteStudent('${s.id}')">🗑 학생삭제</button>` : ''}
         </div>
       </div>
       <hr style="margin:12px 0;border:none;border-top:1px solid var(--bdr)">
@@ -2628,7 +2629,10 @@ function renderStudents() {
           <select id="stuFilterCourse" onchange="studentListPage=0;renderStudents()" style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">
             ${courses.map(c=>`<option value="${c}" ${filterCourse===c?'selected':''}>${c}</option>`).join('')}
           </select>
-        <span style="font-size:12px;color:var(--muted)">${students.length}명</span>
+          <input type="text" id="stuSearch" placeholder="🔍 이름·수험번호·학번 검색" oninput="studentListPage=0;renderStudents()"
+            style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none;min-width:200px"
+            value="${document.getElementById('stuSearch')?.value||''}">
+          <span style="font-size:12px;color:var(--muted)">${students.length}명</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn bo btn-sm" onclick="exportStudentList()">📥 명단 다운로드</button>
@@ -2636,10 +2640,16 @@ function renderStudents() {
         </div>
       </div>
       ${(() => {
-        const totalPages = Math.ceil(students.length / PAGE_SIZE);
+        const q = document.getElementById('stuSearch')?.value?.trim().toLowerCase() || '';
+        const filtered = q ? students.filter(s =>
+          (s.name||'').toLowerCase().includes(q) ||
+          (s.examNo||'').includes(q) ||
+          (s.studentNo||'').includes(q)
+        ) : students;
+        const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
         const page = Math.min(studentListPage, Math.max(0, totalPages - 1));
-        const pageStudents = students.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-        const pageInfo = `${page * PAGE_SIZE + 1}~${Math.min((page+1)*PAGE_SIZE, students.length)}명 / 전체 ${students.length}명`;
+        const pageStudents = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+        const pageInfo = filtered.length === 0 ? '검색 결과 없음' : `${page * PAGE_SIZE + 1}~${Math.min((page+1)*PAGE_SIZE, filtered.length)}명 / 전체 ${filtered.length}명`;
         const prevBtn = page > 0 ? `<button class="btn bo btn-sm" onclick="stuPage(${page-1})">◀ 이전</button>` : '';
         const nextBtn = page < totalPages-1 ? `<button class="btn bo btn-sm" onclick="stuPage(${page+1})">다음 ▶</button>` : '';
         const rows = pageStudents.map(s => {
@@ -2664,6 +2674,7 @@ function renderStudents() {
             <td>${s.course||'—'}</td>
             <td style="text-align:left;font-size:11px">${progItems}</td>
             <td>${status}</td>
+            <td>${isAdmin()?`<button class="btn be btn-xs" onclick="deleteStudent('${s.id}')">삭제</button>`:'—'}</td>
           </tr>`;
         }).join('');
         return `
@@ -2672,7 +2683,7 @@ function renderStudents() {
             <div style="display:flex;gap:6px">${prevBtn}${nextBtn}</div>
           </div>
           <div class="tw"><table class="tb">
-            <thead><tr><th>이름</th><th>수험번호</th><th>학번</th><th>시즌</th><th>과정</th><th>수령현황</th><th>상태</th></tr></thead>
+            <thead><tr><th>이름</th><th>수험번호</th><th>학번</th><th>시즌</th><th>과정</th><th>수령현황</th><th>상태</th><th>관리</th></tr></thead>
             <tbody>${rows}</tbody>
           </table></div>`;
       })()}`;
@@ -2733,7 +2744,14 @@ async function deleteStudent(id) {
     await deleteDoc('students', id);
     await loadAll();
     showToast('학생 삭제 완료', 's');
-    renderStudents();
+    if (G.activeTab === 'dispatch') {
+      // 출고관리에서 삭제 시 검색창 초기화
+      G.dispatchSearch = '';
+      G._dispatchStudentId = null;
+      renderDispatch('');
+    } else {
+      renderStudents();
+    }
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
 
