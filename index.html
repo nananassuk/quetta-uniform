@@ -999,6 +999,7 @@ function buildStudentCard(s) {
           ${isAdmin() ? `<button class="btn bo btn-sm" onclick="openMemoModal('${s.id}')">📝 메모</button>` : ''}
           ${isAdmin() && !s.withdrawn ? `<button class="btn bw btn-sm" onclick="openWithdrawModal('${s.id}')">🚪 퇴소</button>` : ''}
           ${isAdmin() && s.withdrawn  ? `<button class="btn bo btn-sm" onclick="unmarkWithdrawn('${s.id}')">↩ 재원복귀</button>` : ''}
+          ${isAdmin() && !s.withdrawn && s.isTemporaryException ? `<button class="btn bo btn-sm" onclick="clearTempException('${s.id}')">📋 일시예외 해제</button>` : ''}
           ${isAdmin() ? `<button class="btn be btn-sm" onclick="deleteStudent('${s.id}')">🗑 학생삭제</button>` : ''}
         </div>
       </div>
@@ -2614,9 +2615,17 @@ function renderStudents() {
     // 학생 목록
     const filterCourse = document.getElementById('stuFilterCourse')?.value || '전체';
     const filterSeason = document.getElementById('stuFilterSeason')?.value || '전체';
+    const filterStatus = document.getElementById('stuFilterStatus')?.value || '전체';
     let students = G.students;
     if (filterCourse !== '전체') students = students.filter(s => s.course === filterCourse);
     if (filterSeason !== '전체') students = students.filter(s => String(s.season||'') === filterSeason);
+    if (filterStatus === '일시예외해제필요') students = students.filter(s => s.isTemporaryException && !s.withdrawn);
+    else if (filterStatus === '미수령') students = students.filter(s => !s.withdrawn && getMissingItems(s).length > 0);
+    else if (filterStatus === '완료') students = students.filter(s => !s.withdrawn && getMissingItems(s).length === 0 && !s.isTemporaryException);
+    else if (filterStatus === '퇴소') students = students.filter(s => s.withdrawn && !s.isTemporaryException);
+
+    // 일시예외처리 해제 필요 학생 수
+    const needClearCount = G.students.filter(s => s.isTemporaryException && !s.withdrawn).length;
     const seasonOpts = ['전체', ...(G.cfg.seasons||[])].map(s =>
       `<option value="${s}" ${filterSeason===s?'selected':''}>${s==='전체'?'전체 시즌':s+'년'}</option>`
     ).join('');
@@ -2629,10 +2638,18 @@ function renderStudents() {
           <select id="stuFilterCourse" onchange="studentListPage=0;renderStudents()" style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">
             ${courses.map(c=>`<option value="${c}" ${filterCourse===c?'selected':''}>${c}</option>`).join('')}
           </select>
+          <select id="stuFilterStatus" onchange="studentListPage=0;renderStudents()" style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none">
+            <option value="전체" ${filterStatus==='전체'?'selected':''}>전체 상태</option>
+            <option value="미수령" ${filterStatus==='미수령'?'selected':''}>미수령</option>
+            <option value="완료" ${filterStatus==='완료'?'selected':''}>완료</option>
+            <option value="퇴소" ${filterStatus==='퇴소'?'selected':''}>퇴소</option>
+            <option value="일시예외해제필요" ${filterStatus==='일시예외해제필요'?'selected':''}>📋 일시예외 해제 필요 ${needClearCount>0?`(${needClearCount}명)`:''}</option>
+          </select>
           <input type="text" id="stuSearch" placeholder="🔍 이름·수험번호·학번 검색" oninput="studentListPage=0;renderStudents()"
             style="padding:8px 12px;border:2px solid var(--bdr);border-radius:8px;font-family:var(--font);font-size:12px;outline:none;min-width:200px"
             value="${document.getElementById('stuSearch')?.value||''}">
           <span style="font-size:12px;color:var(--muted)">${students.length}명</span>
+          ${needClearCount > 0 && filterStatus !== '일시예외해제필요' ? `<span style="background:#fde8ff;color:#7c3aed;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer" onclick="document.getElementById('stuFilterStatus').value='일시예외해제필요';studentListPage=0;renderStudents()">📋 일시예외 해제 필요 ${needClearCount}명 →</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn bo btn-sm" onclick="exportStudentList()">📥 명단 다운로드</button>
@@ -3095,6 +3112,16 @@ async function confirmWithdraw(studentId) {
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
 async function markWithdrawn(studentId) { openWithdrawModal(studentId); }
+async function clearTempException(studentId) {
+  if (!confirm('일시예외처리를 해제하고 재원 상태로 변경하시겠습니까?')) return;
+  try {
+    await updateDoc('students', studentId, { isTemporaryException: false, withdrawn: false, withdrawnReason: '', withdrawnDate: '' });
+    await loadAll();
+    showToast('일시예외처리 해제 완료', 's');
+    refreshStudentCard(studentId);
+  } catch(e) { showToast('오류: '+e.message,'e'); }
+}
+
 async function unmarkWithdrawn(studentId) {
   if (!confirm('퇴소를 취소하고 재원으로 복귀하시겠습니까?')) return;
   try {
