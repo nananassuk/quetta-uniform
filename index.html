@@ -2705,8 +2705,18 @@ async function addStudentManual() {
   if (!name)   { showToast('이름을 입력해주세요.','w'); return; }
   if (!course) { showToast('과정을 선택해주세요.','w'); return; }
   if (!season) { showToast('시즌을 선택해주세요.','w'); return; }
-  const dup = G.students.find(s => s.examNo && s.examNo === exam);
-  if (dup) { showToast(`수험번호 ${exam}는 이미 등록된 학생입니다. (${dup.name})`,'w'); return; }
+
+  // 수험번호 중복 체크
+  if (exam) {
+    const dupExam = G.students.find(s => s.examNo && s.examNo === exam && s.season === season);
+    if (dupExam) { showToast(`⚠ 수험번호 ${exam}는 ${season}년에 이미 등록된 학생입니다. (${dupExam.name})`,'w'); return; }
+  }
+  // 학번 중복 체크 (같은 시즌 내)
+  if (sno) {
+    const dupSno = G.students.find(s => s.studentNo && s.studentNo === sno && s.season === season);
+    if (dupSno) { showToast(`⚠ 학번 ${sno}는 ${season}년에 이미 등록된 학생입니다. (${dupSno.name})`,'w'); return; }
+  }
+
   try {
     await addDoc('students', { name, examNo: exam||'', studentNo: sno||'', course, season, exceptions:{}, memo:'' });
     await loadAll();
@@ -2717,11 +2727,12 @@ async function addStudentManual() {
 }
 
 async function deleteStudent(id) {
-  if (!confirm('이 학생을 삭제하시겠습니까?')) return;
+  const s = G.students.find(x => x.id === id);
+  if (!confirm(`⚠ ${s?.name || '이 학생'}을(를) 삭제하시겠습니까?\n출고이력은 유지됩니다.`)) return;
   try {
     await deleteDoc('students', id);
     await loadAll();
-    showToast('삭제됨');
+    showToast('학생 삭제 완료', 's');
     renderStudents();
   } catch(e) { showToast('오류: '+e.message,'e'); }
 }
@@ -2763,13 +2774,37 @@ function processStudentExcel(file) {
 async function uploadStudents(rows) {
   if (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch(e) { return; } }
   showToast('업로드 중...', 'w');
+  const defaultSeason = G.cfg.defaults?.season || '';
+  let skipped = [], added = 0;
   try {
     for (const r of rows) {
       if (!r[0]) continue;
-      await addDoc('students', { name: String(r[0]).trim(), examNo: String(r[1]||'').trim(), studentNo: String(r[2]||'').trim(), course: String(r[3]||'').trim(), exceptions: {}, memo: '' });
+      const name   = String(r[0]).trim();
+      const exam   = String(r[1]||'').trim();
+      const sno    = String(r[2]||'').trim();
+      const course = String(r[3]||'').trim();
+      const season = defaultSeason;
+
+      // 학번 중복 체크 (같은 시즌)
+      if (sno) {
+        const dupSno = G.students.find(s => s.studentNo === sno && s.season === season);
+        if (dupSno) { skipped.push(`${name}(학번 ${sno} 중복)`); continue; }
+      }
+      // 수험번호 중복 체크 (같은 시즌)
+      if (exam) {
+        const dupExam = G.students.find(s => s.examNo === exam && s.season === season);
+        if (dupExam) { skipped.push(`${name}(수험번호 ${exam} 중복)`); continue; }
+      }
+
+      await addDoc('students', { name, examNo: exam, studentNo: sno, course, season, exceptions: {}, memo: '' });
+      added++;
     }
     await loadAll();
-    showToast(`${rows.length}명 업로드 완료`, 's');
+    if (skipped.length > 0) {
+      showToast(`${added}명 등록 완료, ${skipped.length}명 중복 제외: ${skipped.slice(0,3).join(', ')}${skipped.length>3?'...':''}`, 'w');
+    } else {
+      showToast(`${added}명 업로드 완료`, 's');
+    }
     studentTabSel = 'list';
     renderStudents();
   } catch(e) { showToast('오류: '+e.message,'e'); }
