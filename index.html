@@ -781,7 +781,7 @@ function renderDispatch(searchVal = '') {
             </div>
             <div style="display:flex;gap:8px;margin-top:4px">
               <button class="btn bp" onclick="quickRegisterAndDispatch()">✅ 등록 후 출고하기</button>
-              <button class="btn bo" onclick="renderDispatch('')">취소</button>
+              <button class="btn bo" onclick="document.getElementById('dSearch').value='';document.getElementById('dispatchResult').innerHTML='';G.dispatchSearch='';">취소</button>
             </div>
           </div>
         </div>`;
