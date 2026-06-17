@@ -3098,7 +3098,7 @@ async function markWithdrawn(studentId) { openWithdrawModal(studentId); }
 async function unmarkWithdrawn(studentId) {
   if (!confirm('퇴소를 취소하고 재원으로 복귀하시겠습니까?')) return;
   try {
-    await updateDoc('students', studentId, {withdrawn:false, withdrawnDate:'', withdrawnReason:''});
+    await updateDoc('students', studentId, {withdrawn:false, withdrawnDate:'', withdrawnReason:'', isTemporaryException:false});
     await loadAll();
     showToast('재원 복귀 완료','s');
     if (G.activeTab==='missing') renderMissing();
