@@ -958,12 +958,17 @@ function buildStudentCard(s) {
         rowsHtml = rows.map(d => {
           const dt = d.createdAt?.toDate?.() ? d.createdAt.toDate().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
 
-          // 이 출고가 반품됐는지 확인 (refId로 연결된 반품 이력 있는지)
-          const hasReturn = studentDisp.some(r => r.type === '반품' && r.refId === d.id);
+          // 반품 이력 연결 확인 - 전체 반품됐는지 체크
+          const returnedQty = studentDisp
+            .filter(r => r.type === '반품' && r.refId === d.id)
+            .reduce((sum, r) => sum + (r.qty || 1), 0);
+          const hasFullReturn = returnedQty >= (d.qty || 1); // 전체 반품됐을 때만 버튼 숨김
+          const hasAnyReturn = returnedQty > 0;
 
           let typeBadge;
           if (d.type==='출고') {
-            if (hasReturn) typeBadge=`<span class="badge bok" style="opacity:0.6">출고</span><span class="badge berr" style="font-size:10px;margin-left:3px">반품됨</span>`;
+            if (hasFullReturn) typeBadge=`<span class="badge bok" style="opacity:0.6">출고</span><span class="badge berr" style="font-size:10px;margin-left:3px">반품됨</span>`;
+            else if (hasAnyReturn) typeBadge=`<span class="badge bok">출고</span><span class="badge bwarn" style="font-size:10px;margin-left:3px">부분반품(${returnedQty}개)</span>`;
             else typeBadge=`<span class="badge bok">출고</span>${d.isExtraPurchase?'<span class="badge bpurple" style="font-size:10px;margin-left:3px">🛍추가구매</span>':''}`;
           }
           else if (d.type==='반품') typeBadge=`<span class="badge berr">반품</span>`;
@@ -974,8 +979,8 @@ function buildStudentCard(s) {
 
           const { stock } = calcStock();
           let actionBtns = '';
-          if (d.type==='출고' && !hasReturn) {
-            // 반품되지 않은 출고만 반품/교환 + 출고취소 버튼 표시
+          if (d.type==='출고' && !hasFullReturn) {
+            // 전체 반품 안 된 출고 → 반품/교환 + 출고취소 버튼 표시
             actionBtns = `<button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
               ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">출고취소</button>`:''}`;
           } else if (d.type==='교환출고') {
