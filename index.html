@@ -957,8 +957,15 @@ function buildStudentCard(s) {
       } else {
         rowsHtml = rows.map(d => {
           const dt = d.createdAt?.toDate?.() ? d.createdAt.toDate().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+
+          // 이 출고가 반품됐는지 확인 (refId로 연결된 반품 이력 있는지)
+          const hasReturn = studentDisp.some(r => r.type === '반품' && r.refId === d.id);
+
           let typeBadge;
-          if (d.type==='출고') typeBadge=`<span class="badge bok">출고</span>${d.isExtraPurchase?'<span class="badge bpurple" style="font-size:10px;margin-left:3px">🛍추가구매</span>':''}`;
+          if (d.type==='출고') {
+            if (hasReturn) typeBadge=`<span class="badge bok" style="opacity:0.6">출고</span><span class="badge berr" style="font-size:10px;margin-left:3px">반품됨</span>`;
+            else typeBadge=`<span class="badge bok">출고</span>${d.isExtraPurchase?'<span class="badge bpurple" style="font-size:10px;margin-left:3px">🛍추가구매</span>':''}`;
+          }
           else if (d.type==='반품') typeBadge=`<span class="badge berr">반품</span>`;
           else if (d.type==='교환출고') typeBadge=`<span class="badge binfo">교환출고</span>`;
           else if (d.type==='교환반납') typeBadge=`<span class="badge bneu">교환반납(${d.exchangeType})</span>`;
@@ -966,17 +973,25 @@ function buildStudentCard(s) {
           else typeBadge=`<span class="badge bneu">${d.type}</span>`;
 
           const { stock } = calcStock();
-          const actionBtns = canWrite() && (d.type==='출고'||d.type==='교환출고') ? `
-            <button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
-            ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}
-          ` : canWrite() && d.type==='미수령' ? (() => {
+          let actionBtns = '';
+          if (d.type==='출고' && !hasReturn) {
+            // 반품되지 않은 출고만 반품/교환 + 출고취소 버튼 표시
+            actionBtns = `<button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
+              ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">출고취소</button>`:''}`;
+          } else if (d.type==='교환출고') {
+            actionBtns = `<button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
+              ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">출고취소</button>`:''}`;
+          } else if (d.type==='미수령') {
             const avail = stock[d.item]?.[d.size] || 0;
-            return avail > 0
+            actionBtns = avail > 0
               ? `<button class="btn bs btn-xs" onclick="receivePendingItem('${d.id}','${s.name}')">✓ 수령처리</button>
-                 ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}`
+                 ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">취소</button>`:''}`
               : `<span style="font-size:11px;color:var(--err)">재고없음(${avail})</span>
-                 ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>`:''}`;
-          })() : (canWrite() && d.type !== '교환반납' ? `<button class="btn be btn-xs" onclick="delDispatch('${d.id}')">출고취소</button>` : '');
+                 ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">취소</button>`:''}`;
+          } else if (d.type==='반품' && isAdmin()) {
+            // 반품 이력은 관리자만 삭제 가능 (잘못 반품한 경우)
+            actionBtns = `<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">반품취소</button>`;
+          }
 
           return `<tr>
             <td>${dt}</td>
