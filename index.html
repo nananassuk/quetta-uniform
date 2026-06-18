@@ -961,32 +961,31 @@ function buildStudentCard(s) {
         rowsHtml = rows.map(d => {
           const dt = d.createdAt?.toDate?.() ? d.createdAt.toDate().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
 
-          // 반품 이력 연결 확인 - 전체 반품됐는지 체크
+          // 반품/교환반납 이력 연결 확인 - 전체 반납됐는지 체크
           const returnedQty = studentDisp
-            .filter(r => r.type === '반품' && r.refId === d.id)
+            .filter(r => (r.type === '반품' || r.type === '교환반납') && r.refId === d.id)
             .reduce((sum, r) => sum + (r.qty || 1), 0);
-          const hasFullReturn = returnedQty >= (d.qty || 1); // 전체 반품됐을 때만 버튼 숨김
-          const hasAnyReturn = returnedQty > 0;
+          const hasFullReturn = returnedQty >= (d.qty || 1);
+          const hasAnyReturn  = returnedQty > 0;
 
           let typeBadge;
           if (d.type==='출고') {
-            if (hasFullReturn) typeBadge=`<span class="badge bok" style="opacity:0.6">출고</span><span class="badge berr" style="font-size:10px;margin-left:3px">반품됨</span>`;
-            else if (hasAnyReturn) typeBadge=`<span class="badge bok">출고</span><span class="badge bwarn" style="font-size:10px;margin-left:3px">부분반품(${returnedQty}개)</span>`;
+            if (hasFullReturn) typeBadge=`<span class="badge bok" style="opacity:0.6">출고</span><span class="badge berr" style="font-size:10px;margin-left:3px">반납됨</span>`;
+            else if (hasAnyReturn) typeBadge=`<span class="badge bok">출고</span><span class="badge bwarn" style="font-size:10px;margin-left:3px">부분반납(${returnedQty}개)</span>`;
             else typeBadge=`<span class="badge bok">출고</span>${d.isExtraPurchase?'<span class="badge bpurple" style="font-size:10px;margin-left:3px">🛍추가구매</span>':''}`;
           }
           else if (d.type==='반품') typeBadge=`<span class="badge berr">반품</span>`;
-          else if (d.type==='교환출고') typeBadge=`<span class="badge binfo">교환출고</span>`;
+          else if (d.type==='교환출고') {
+            if (hasFullReturn) typeBadge=`<span class="badge binfo" style="opacity:0.6">교환출고</span><span class="badge berr" style="font-size:10px;margin-left:3px">반납됨</span>`;
+            else typeBadge=`<span class="badge binfo">교환출고</span>`;
+          }
           else if (d.type==='교환반납') typeBadge=`<span class="badge bneu">교환반납(${d.exchangeType})</span>`;
           else if (d.type==='미수령') typeBadge=`<span class="badge bwarn">미수령</span>`;
           else typeBadge=`<span class="badge bneu">${d.type}</span>`;
 
           const { stock } = calcStock();
           let actionBtns = '';
-          if (d.type==='출고' && !hasFullReturn) {
-            // 전체 반품 안 된 출고 → 반품/교환 + 출고취소 버튼 표시
-            actionBtns = `<button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
-              ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">출고취소</button>`:''}`;
-          } else if (d.type==='교환출고') {
+          if ((d.type==='출고' || d.type==='교환출고') && !hasFullReturn) {
             actionBtns = `<button class="btn bo btn-xs" onclick="openReturnModal('${d.id}')">반품/교환</button>
               ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">출고취소</button>`:''}`;
           } else if (d.type==='미수령') {
@@ -997,10 +996,8 @@ function buildStudentCard(s) {
               : `<span style="font-size:11px;color:var(--err)">재고없음(${avail})</span>
                  ${canWrite()?`<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">취소</button>`:''}`;
           } else if (d.type==='반품' && isAdmin()) {
-            // 반품 이력은 관리자만 삭제 가능 (잘못 반품한 경우)
             actionBtns = `<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">반품취소</button>`;
-          } else if (d.type==='반품입고' && isAdmin()) {
-            // 반품입고 이력도 관리자 삭제 가능 (업로드 오류 등)
+          } else if ((d.type==='교환반납' || d.type==='반품입고') && isAdmin()) {
             actionBtns = `<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">삭제</button>`;
           }
 
@@ -1383,6 +1380,23 @@ async function delDispatch(id, studentId) {
   if (!confirm(msg)) return;
   try {
     await updateDoc('dispatches', id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+    // 교환출고 삭제 시 → 연결된 교환반납도 같이 삭제
+    if (d.type === '교환출고' && d.refId) {
+      const paired = G.dispatches.find(x => x.id === d.refId && x.type === '교환반납');
+      if (paired) await updateDoc('dispatches', paired.id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
+    // 교환반납 삭제 시 → 연결된 교환출고도 같이 삭제
+    if (d.type === '교환반납') {
+      const paired = G.dispatches.find(x => x.refId === id && x.type === '교환출고');
+      if (paired) await updateDoc('dispatches', paired.id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
+    // 반품 삭제 시 → 연결된 반납됨 출고 레코드도 같이 삭제
+    if (d.type === '반품' && d.refId) {
+      const paired = G.dispatches.find(x => x.id === d.refId && x.type === '출고');
+      if (paired) await updateDoc('dispatches', paired.id, { deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
+
     await loadAll();
     showToast(typeLabel + ' 완료 — 재고 복원됨', 's');
     if (G.activeTab === 'dispatch') {
