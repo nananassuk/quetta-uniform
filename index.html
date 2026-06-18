@@ -495,7 +495,7 @@ function getStudentReceived(studentId) {
     if (received[d.item] === undefined) return;
     if (d.isExtraPurchase) return; // 추가구매는 수령 계산에서 제외
     if (d.type === '출고' || d.type === '교환출고') received[d.item] += d.qty || 1;
-    if (d.type === '반품' || d.type === '반품입고') received[d.item] -= d.qty || 1;
+    if (d.type === '반품' || d.type === '반품입고' || d.type === '교환반납') received[d.item] -= d.qty || 1;
   });
   received['하의'] = (received['긴바지'] || 0) + (received['반바지'] || 0);
   return received;
