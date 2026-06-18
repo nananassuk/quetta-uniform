@@ -999,6 +999,9 @@ function buildStudentCard(s) {
           } else if (d.type==='반품' && isAdmin()) {
             // 반품 이력은 관리자만 삭제 가능 (잘못 반품한 경우)
             actionBtns = `<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">반품취소</button>`;
+          } else if (d.type==='반품입고' && isAdmin()) {
+            // 반품입고 이력도 관리자 삭제 가능 (업로드 오류 등)
+            actionBtns = `<button class="btn be btn-xs" onclick="delDispatch('${d.id}','${s.id}')">삭제</button>`;
           }
 
           return `<tr>
