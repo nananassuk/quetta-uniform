@@ -699,7 +699,9 @@ function renderDashboard() {
   const totalDispatches = G.dispatches.filter(d => d.type === '출고').length;
   const totalStudents = G.students.length;
   const missingCount = G.students.filter(s => getMissingItems(s).length > 0).length;
-  const pendingCount = G.dispatches.filter(d => d.type === '미수령').length;
+  const pendingStudentIds = new Set(G.dispatches.filter(d => d.type === '미수령').map(d => d.studentId));
+  const activeStudentIds  = new Set(G.students.filter(s => !s.withdrawn && !s.isTemporaryException).map(s => s.id));
+  const pendingCount = G.dispatches.filter(d => d.type === '미수령' && activeStudentIds.has(d.studentId)).length;
 
   let seasonBlocks = '';
   ['동복','하복'].forEach(season => {
