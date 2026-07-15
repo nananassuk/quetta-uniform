@@ -713,8 +713,9 @@ function renderDashboard() {
       const sizes = cfg.sizes;
       const inRow  = sizes.map(sz => `<td>${G.stockIn?.[item]?.[sz] || 0}</td>`).join('');
       const outRow = sizes.map(sz => {
-        const out = G.dispatches.filter(d => d.item===item && d.size===sz && d.type==='출고').reduce((s,d)=>s+(d.qty||1),0);
-        return `<td>${out}</td>`;
+        const out = G.dispatches.filter(d => d.item===item && d.size===sz && (d.type==='출고'||d.type==='교환출고')).reduce((s,d)=>s+(d.qty||1),0);
+        const ret = G.dispatches.filter(d => d.item===item && d.size===sz && (d.type==='반품'||d.type==='반품입고'||d.type==='교환반납')).reduce((s,d)=>s+(d.qty||1),0);
+        return `<td>${out - ret}</td>`;
       }).join('');
       const stRow = sizes.map(sz => {
         const s = stock[item]?.[sz] || 0;
@@ -1932,29 +1933,32 @@ function renderStock() {
       cfg.sizes.forEach((sz, si) => {
         const sysNormal = sysAtTime.stock[item]?.[sz]  || 0;
         const sysDef    = sysAtTime.defect[item]?.[sz] || 0;
-        const sysTotal  = sysNormal + sysDef;
         const ex = existingMap[item+'_'+sz];
         const v창고  = ex ? (ex.창고  || 0) : 0;
         const v교판실 = ex ? (ex.교판실 || 0) : 0;
         const v샘플  = ex ? (ex.샘플  || 0) : 0;
         const v불량  = ex ? (ex.불량  || 0) : 0;
-        const vSum   = v창고 + v교판실 + v샘플 + v불량;
-        const vDiff  = vSum - sysTotal;
+        const vSumNormal = v창고 + v교판실 + v샘플; // 불량 제외 합계
+        const vDiffN = vSumNormal - sysNormal;
+        const vDiffD = v불량 - sysDef;
         const vNote  = ex ? (ex.note || '') : '';
-        const diffHtml = vSum === 0 && !ex ? '—'
-          : vDiff === 0 ? '<span style="color:var(--ok)">✓</span>'
-          : vDiff > 0 ? '<span class="pos">+'+vDiff+'</span>'
-          : '<span class="neg">'+vDiff+'</span>';
+        const diffHtml = (d, hasEx) => (!hasEx && d === 0) ? '—'
+          : d === 0 ? '<span style="color:var(--ok)">✓</span>'
+          : d > 0 ? '<span class="pos">+'+d+'</span>'
+          : '<span class="neg">'+d+'</span>';
         const inpHtml = (t, val) => '<input type="number" min="0" value="'+val+'" id="chk_'+t+'_'+item+'_'+sz+'" '+S(62)+' oninput="calcCheckSum(this)">';
         rows += '<tr class="'+(si===0?'gc':'')+(ex?' style="background:#f0fdf4"':'')+'">'+
           (si===0?'<td class="thd" rowspan="'+cfg.sizes.length+'" style="text-align:left">'+item+'</td>':'')+
           '<td>'+sz+'</td>'+
-          '<td>'+inpHtml('창고',v창고)+'</td><td>'+inpHtml('교판실',v교판실)+'</td>'+
-          '<td>'+inpHtml('샘플',v샘플)+'</td><td>'+inpHtml('불량',v불량)+'</td>'+
-          '<td style="font-weight:700;color:var(--ok)" id="chksum_'+item+'_'+sz+'">'+vSum+'</td>'+
-          '<td style="font-weight:700;color:var(--accent)" id="chksys_'+item+'_'+sz+'" data-sys="'+sysTotal+'">'+sysNormal+'</td>'+
+          '<td>'+inpHtml('창고',v창고)+'</td>'+
+          '<td>'+inpHtml('교판실',v교판실)+'</td>'+
+          '<td>'+inpHtml('샘플',v샘플)+'</td>'+
+          '<td style="font-weight:700;color:var(--ok)" id="chksum_'+item+'_'+sz+'">'+vSumNormal+'</td>'+
+          '<td style="font-weight:700;color:var(--accent)" id="chksys_'+item+'_'+sz+'" data-sys="'+sysNormal+'">'+sysNormal+'</td>'+
+          '<td style="font-weight:700" id="chkdiff_'+item+'_'+sz+'">'+diffHtml(vDiffN, !!ex)+'</td>'+
+          '<td>'+inpHtml('불량',v불량)+'</td>'+
           '<td style="font-weight:700;color:var(--err)">'+sysDef+'</td>'+
-          '<td style="font-weight:700" id="chkdiff_'+item+'_'+sz+'">'+diffHtml+'</td>'+
+          '<td style="font-weight:700">'+diffHtml(vDiffD, !!ex)+'</td>'+
           '<td><input type="text" id="chknote_'+item+'_'+sz+'" value="'+vNote+'" placeholder="사유..." '+S(130)+'></td>'+
           '</tr>';
       });
@@ -1977,18 +1981,26 @@ function renderStock() {
         '</div>'+
       '</div>'+
       '<div class="tw" style="overflow-x:auto"><table class="tb">'+
-        '<thead><tr>'+
-          '<th rowspan="2">품목</th><th rowspan="2">사이즈</th>'+
-          '<th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고 입력</th>'+
-          '<th rowspan="2" style="background:#f0fdf4;color:var(--ok)">실재고합계</th>'+
-          '<th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고</th>'+
-          '<th rowspan="2" style="background:#fff1f2;color:var(--err)">불량재고</th>'+
-          '<th rowspan="2">차이<br><span style="font-size:9px;font-weight:400">(실재고합계 vs 시스템+불량)</span></th>'+
-          '<th rowspan="2">차이 사유</th>'+
-        '</tr><tr>'+
-          '<th style="background:#f0f9ff">창고</th><th style="background:#f0f9ff">교판실</th>'+
-          '<th style="background:#f0f9ff">샘플</th><th style="background:#f0f9ff">불량</th>'+
-        '</tr></thead>'+
+        '<thead>'+
+          '<tr>'+
+            '<th rowspan="3">품목</th><th rowspan="3">사이즈</th>'+
+            '<th colspan="6" style="background:#e0f2fe;color:#0369a1">정상재고</th>'+
+            '<th colspan="3" style="background:#fff1f2;color:var(--err)">불량재고</th>'+
+            '<th rowspan="3">차이 사유</th>'+
+          '</tr><tr>'+
+            '<th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고</th>'+
+            '<th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고</th>'+
+            '<th rowspan="2">차이</th>'+
+            '<th rowspan="2" style="background:#fff1f2;color:var(--err)">실재고</th>'+
+            '<th rowspan="2" style="background:#fff1f2;color:var(--err)">시스템재고</th>'+
+            '<th rowspan="2">차이</th>'+
+          '</tr><tr>'+
+            '<th style="background:#f0f9ff">창고</th>'+
+            '<th style="background:#f0f9ff">교재배부처</th>'+
+            '<th style="background:#f0f9ff">샘플</th>'+
+            '<th style="background:#f0fdf4;color:var(--ok)">합계</th>'+
+          '</tr>'+
+        '</thead>'+
         '<tbody>'+rows+'</tbody></table></div>';
 
   } else if (stockTabSel === 'history') {
@@ -2028,20 +2040,29 @@ function renderStock() {
         const chk = checkMap[`${item}_${sz}`];
         const sysNormal = sessSysAt.stock[item]?.[sz]  || 0;
         const sysDef    = sessSysAt.defect[item]?.[sz] || 0;
-        const sysTotal  = sysNormal + sysDef;
-        const actual = chk?.actual;
-        const diff = actual !== undefined ? actual - sysTotal : null;
-        const diffCell = diff===null ? '—' : diff===0 ? '<span style="color:var(--ok)">✓</span>'
-          : diff>0 ? `<span class="pos">+${diff}</span>` : `<span class="neg">${diff}</span>`;
+
+        // 불량 제외 실재고합계
+        const actualNormal = chk ? ((chk.창고||0) + (chk.교판실||0) + (chk.샘플||0)) : undefined;
+        const actualDef    = chk ? (chk.불량||0) : undefined;
+
+        // 차이 계산 (각각)
+        const diffN = actualNormal !== undefined ? actualNormal - sysNormal : null;
+        const diffD = actualDef    !== undefined ? actualDef    - sysDef    : null;
+
+        const diffCell = (d) => d===null ? '—' : d===0
+          ? '<span style="color:var(--ok)">✓</span>'
+          : d>0 ? `<span class="pos">+${d}</span>` : `<span class="neg">${d}</span>`;
+
         rows += `<tr class="${si===0?'gc':''}">
           ${si===0?`<td class="thd" rowspan="${cfg.sizes.length}" style="text-align:left">${item}</td>`:''}
           <td>${sz}</td>
-          <td>${chk?.창고||'—'}</td><td>${chk?.교판실||'—'}</td>
-          <td>${chk?.샘플||'—'}</td><td>${chk?.불량||'—'}</td>
-          <td style="font-weight:700;color:var(--ok)">${actual!==undefined?actual:'—'}</td>
+          <td>${chk?.창고??'—'}</td><td>${chk?.교판실??'—'}</td><td>${chk?.샘플??'—'}</td>
+          <td style="font-weight:700;color:var(--ok)">${actualNormal!==undefined?actualNormal:'—'}</td>
           <td style="color:var(--accent);font-weight:700">${sysNormal}</td>
+          <td style="font-weight:700">${diffCell(diffN)}</td>
+          <td style="color:var(--err);font-weight:700">${actualDef!==undefined?actualDef:'—'}</td>
           <td style="color:var(--err);font-weight:700">${sysDef||'—'}</td>
-          <td>${diffCell}</td>
+          <td style="font-weight:700">${diffCell(diffD)}</td>
           <td style="font-size:11px;color:var(--muted)">${chk?.note||''}</td>
         </tr>`;
       });
@@ -2076,19 +2097,28 @@ function renderStock() {
           <button class="btn bo btn-sm" onclick="exportStockReport()">📥 엑셀 다운로드</button>
         </div>
       </div>
-      <div class="tw"><table class="tb">
+      <div class="tw" style="overflow-x:auto"><table class="tb">
         <thead>
           <tr>
-            <th rowspan="2">품목</th><th rowspan="2">사이즈</th>
-            <th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고</th>
-            <th rowspan="2" style="background:#f0fdf4;color:var(--ok)">실재고합계</th>
-            <th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고</th>
-            <th rowspan="2" style="background:#fff1f2;color:var(--err)">불량재고</th>
-            <th rowspan="2">차이</th><th rowspan="2">비고</th>
+            <th rowspan="3">품목</th>
+            <th rowspan="3">사이즈</th>
+            <th colspan="6" style="background:#e0f2fe;color:#0369a1">정상재고</th>
+            <th colspan="3" style="background:#fff1f2;color:var(--err)">불량재고</th>
+            <th rowspan="3">비고</th>
           </tr>
           <tr>
-            <th style="background:#f0f9ff">창고</th><th style="background:#f0f9ff">교판실</th>
-            <th style="background:#f0f9ff">샘플</th><th style="background:#f0f9ff">불량</th>
+            <th colspan="4" style="background:#f0f9ff;color:#0369a1">실재고</th>
+            <th rowspan="2" style="background:#eef3fd;color:var(--accent)">시스템재고</th>
+            <th rowspan="2">차이</th>
+            <th rowspan="2" style="background:#fff1f2;color:var(--err)">실재고</th>
+            <th rowspan="2" style="background:#fff1f2;color:var(--err)">시스템재고</th>
+            <th rowspan="2">차이</th>
+          </tr>
+          <tr>
+            <th style="background:#f0f9ff">창고</th>
+            <th style="background:#f0f9ff">교재배부처</th>
+            <th style="background:#f0f9ff">샘플</th>
+            <th style="background:#f0fdf4;color:var(--ok)">합계</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -2292,32 +2322,23 @@ async function deleteAllStockInHistory() {
 
 /* ── 실재고 체크 합계 실시간 계산 ── */
 function calcCheckSum(el) {
-  // el의 id에서 타입_품목_사이즈 추출 (예: chk_창고_후드집업_M)
   const parts = el.id.split('_');
-  // parts[0]=chk, parts[1]=타입, parts[2..n-1]=item, parts[n]=size
   const sz   = parts[parts.length - 1];
-  const type = parts[1];
   const item = parts.slice(2, parts.length - 1).join('_');
-
-  const창고  = parseInt(document.getElementById('chk_창고_'  + item + '_' + sz)?.value)||0;
-  const교판실 = parseInt(document.getElementById('chk_교판실_' + item + '_' + sz)?.value)||0;
-  const샘플  = parseInt(document.getElementById('chk_샘플_'  + item + '_' + sz)?.value)||0;
-  const불량  = parseInt(document.getElementById('chk_불량_'  + item + '_' + sz)?.value)||0;
-  const sum  = 창고 + 교판실 + 샘플 + 불량;
-
+  const 창고  = parseInt(document.getElementById('chk_창고_'  + item + '_' + sz)?.value)||0;
+  const 교판실 = parseInt(document.getElementById('chk_교판실_' + item + '_' + sz)?.value)||0;
+  const 샘플  = parseInt(document.getElementById('chk_샘플_'  + item + '_' + sz)?.value)||0;
+  const sumNormal = 창고 + 교판실 + 샘플;
   const sysEl  = document.getElementById('chksys_'  + item + '_' + sz);
   const sumEl  = document.getElementById('chksum_'  + item + '_' + sz);
   const diffEl = document.getElementById('chkdiff_' + item + '_' + sz);
-  const sysTotal = sysEl ? parseInt(sysEl.dataset.sys || 0) : 0;
-
-  if (sumEl)  sumEl.textContent = sum;
+  const sysNormal = sysEl ? parseInt(sysEl.dataset.sys || 0) : 0;
+  if (sumEl)  sumEl.textContent = sumNormal;
   if (diffEl) {
-    const d = sum - sysTotal;
-    diffEl.innerHTML = d===0
-      ? '<span style="color:var(--ok)">✓</span>'
-      : d>0
-        ? '<span class="pos">+' + d + '</span>'
-        : '<span class="neg">' + d + '</span>';
+    const d = sumNormal - sysNormal;
+    diffEl.innerHTML = d===0 ? '<span style="color:var(--ok)">✓</span>'
+      : d>0 ? '<span class="pos">+' + d + '</span>'
+            : '<span class="neg">' + d + '</span>';
   }
 }
 
@@ -2510,21 +2531,20 @@ function exportStockReport() {
       const chk = checkMap[item+'_'+sz];
       const sysNormal = sessSysAt.stock[item]?.[sz] || 0;
       const sysDef    = sessSysAt.defect[item]?.[sz] || 0;
-      const sysTotal  = sysNormal + sysDef;
-      const actual    = chk?.actual;
-      const diff      = actual !== undefined ? actual - sysTotal : '';
+      const actualNormal = chk ? ((chk.창고||0) + (chk.교판실||0) + (chk.샘플||0)) : '';
+      const actualDef    = chk ? (chk.불량||0) : '';
+      const diffN = chk ? actualNormal - sysNormal : '';
+      const diffD = chk ? actualDef - sysDef : '';
       rows.push({
-        '품목': item,
-        '사이즈': sz,
-        '창고': chk?.창고 ?? '',
-        '교판실': chk?.교판실 ?? '',
-        '샘플': chk?.샘플 ?? '',
-        '불량(실재고)': chk?.불량 ?? '',
-        '실재고합계': actual ?? '',
+        '품목': item, '사이즈': sz,
+        '창고': chk?.창고??'', '교판실': chk?.교판실??'', '샘플': chk?.샘플??'',
+        '실재고합계(불량제외)': actualNormal,
         '시스템재고': sysNormal,
-        '불량재고': sysDef || '',
-        '차이': diff,
-        '비고': chk?.note || '',
+        '차이(일반)': diffN,
+        '불량실재고': actualDef,
+        '불량시스템재고': sysDef||0,
+        '불량차이': diffD,
+        '비고': chk?.note||'',
       });
     });
   });
