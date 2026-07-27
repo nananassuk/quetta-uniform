@@ -596,7 +596,7 @@ function getItemsBySeasonOrdered(season) {
 }
 function applyRoleNav() {
   const vendorHide    = ['dispatch','missing','students','settings','stock'];
-  const assistantHide = ['students','settings'];
+  const assistantHide = ['settings'];
   if (G.role === 'vendor')    vendorHide.forEach(t    => { const el=document.getElementById(`nav-${t}`); if(el) el.style.display='none'; });
   if (G.role === 'assistant') assistantHide.forEach(t => { const el=document.getElementById(`nav-${t}`); if(el) el.style.display='none'; });
 }
@@ -2566,6 +2566,8 @@ let studentTabSel = 'list';
 let studentListPage = 0;
 const PAGE_SIZE = 50;
 function renderStudents() {
+  // 조교는 전체 출고이력만 접근 가능
+  if (!isAdmin() && studentTabSel !== 'history') studentTabSel = 'history';
   const el = document.getElementById('tab-students');
   const courses = ['전체', ...Object.keys(G.cfg.courses)];
   let bodyHtml;
@@ -2902,17 +2904,21 @@ function renderStudents() {
     <div class="ph"><div class="pt">👥 학생명단</div><div class="ps">학생 등록 및 출고 이력 관리</div></div>
     <div class="card">
       <div class="ttabs">
-        <button class="ttab ${studentTabSel==='list'?'active':''}"             onclick="selStudentTab('list')">목록 (${G.students.length}명)</button>
-        <button class="ttab ${studentTabSel==='manual'?'active':''}"           onclick="selStudentTab('manual')">✏️ 수기 등록</button>
-        ${isAdmin()?`<button class="ttab ${studentTabSel==='upload'?'active':''}" onclick="selStudentTab('upload')">📂 명단 업로드</button>`:''}
-        ${isAdmin()?`<button class="ttab ${studentTabSel==='dispatch_upload'?'active':''}" onclick="selStudentTab('dispatch_upload')">📤 출고이력 업로드</button>`:''}
-        ${isAdmin()?`<button class="ttab ${studentTabSel==='withdrawn_upload'?'active':''}" onclick="selStudentTab('withdrawn_upload')">🚪 퇴소생 업로드</button>`:''}
-        <button class="ttab ${studentTabSel==='history'?'active':''}"          onclick="selStudentTab('history')">📋 전체 출고이력</button>
+        ${isAdmin() ? `<button class="ttab ${studentTabSel==='list'?'active':''}"             onclick="selStudentTab('list')">목록 (${G.students.length}명)</button>` : ''}
+        ${isAdmin() ? `<button class="ttab ${studentTabSel==='manual'?'active':''}"           onclick="selStudentTab('manual')">✏️ 수기 등록</button>` : ''}
+        ${isAdmin() ? `<button class="ttab ${studentTabSel==='upload'?'active':''}"           onclick="selStudentTab('upload')">📂 명단 업로드</button>` : ''}
+        ${isAdmin() ? `<button class="ttab ${studentTabSel==='dispatch_upload'?'active':''}"  onclick="selStudentTab('dispatch_upload')">📤 출고이력 업로드</button>` : ''}
+        ${isAdmin() ? `<button class="ttab ${studentTabSel==='withdrawn_upload'?'active':''}" onclick="selStudentTab('withdrawn_upload')">🚪 퇴소생 업로드</button>` : ''}
+        <button class="ttab ${studentTabSel==='history'?'active':''}" onclick="selStudentTab('history')">📋 전체 출고이력</button>
       </div>
       ${bodyHtml}
     </div>`;
 }
-function selStudentTab(t) { studentTabSel = t; studentListPage = 0; renderStudents(); }
+function selStudentTab(t) {
+  // 조교는 전체 출고이력만 접근 가능
+  if (!isAdmin() && t !== 'history') return;
+  studentTabSel = t; studentListPage = 0; renderStudents();
+}
 function stuPage(p) { studentListPage = p; renderStudents(); }
 
 /* ── 수기 학생 등록 ── */
