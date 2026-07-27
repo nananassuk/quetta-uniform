@@ -1792,6 +1792,8 @@ function openMemoModal(studentId) {
    ═══════════════════════════════════════════════ */
 let stockTabSel = 'input';
 function renderStock() {
+  // 조교는 입고수량 입력 탭 접근 불가 → 실재고 체크로 자동 이동
+  if (!canStockIn() && stockTabSel === 'input') stockTabSel = 'check';
   const { stock, defect } = calcStock();
   const el = document.getElementById('tab-stock');
 
